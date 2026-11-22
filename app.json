@@ -5,12 +5,6 @@
     "version": "1.0.0",
     "orientation": "portrait",
     "userInterfaceStyle": "automatic",
-    "icon": "./assets/icon.png",
-    "splash": {
-      "image": "./assets/icon.png",
-      "resizeMode": "contain",
-      "backgroundColor": "#141820"
-    },
     "ios": {
       "supportsTablet": false,
       "bundleIdentifier": "fr.nextgen.croquvite",
@@ -20,22 +14,13 @@
     },
     "android": {
       "package": "fr.nextgen.croquvite",
-      "adaptiveIcon": {
-        "foregroundImage": "./assets/icon.png",
-        "backgroundColor": "#ffffff"
-      },
       "permissions": [
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
         "android.permission.CAMERA",
-        "android.permission.POST_NOTIFICATIONS"
+        "android.permission.RECORD_AUDIO"
       ]
-    },
-    "web": {
-      "favicon": "./assets/icon.png",
-      "name": "Croqu'Vite",
-      "shortName": "Croqu'Vite",
-      "display": "standalone",
-      "backgroundColor": "#141820",
-      "themeColor": "#f97316"
     },
     "plugins": [
       [
