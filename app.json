@@ -1,0 +1,40 @@
+{
+  "expo": {
+    "name": "Croqu'Vite",
+    "slug": "croquvite",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "fr.nextgen.croquvite",
+      "infoPlist": {
+        "NSCameraUsageDescription": "La caméra sert à scanner les codes-barres de vos produits."
+      }
+    },
+    "android": {
+      "package": "fr.nextgen.croquvite",
+      "permissions": [
+        "CAMERA",
+        "POST_NOTIFICATIONS",
+        "SCHEDULE_EXACT_ALARM",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "plugins": [
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "La caméra sert à scanner les codes-barres de vos produits."
+        }
+      ],
+      "expo-notifications"
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "f937ba4b-525c-46cd-bae5-dbcc68662b39"
+      }
+    }
+  }
+}
