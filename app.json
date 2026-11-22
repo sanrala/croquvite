@@ -14,27 +14,14 @@
     },
     "android": {
       "package": "fr.nextgen.croquvite",
-      "permissions": [
-        "CAMERA",
-        "POST_NOTIFICATIONS",
-        "SCHEDULE_EXACT_ALARM",
-        "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO"
-      ]
+      "permissions": ["CAMERA", "POST_NOTIFICATIONS", "SCHEDULE_EXACT_ALARM"]
     },
     "plugins": [
       [
         "expo-camera",
-        {
-          "cameraPermission": "La caméra sert à scanner les codes-barres de vos produits."
-        }
+        { "cameraPermission": "La caméra sert à scanner les codes-barres de vos produits." }
       ],
       "expo-notifications"
-    ],
-    "extra": {
-      "eas": {
-        "projectId": "f937ba4b-525c-46cd-bae5-dbcc68662b39"
-      }
-    }
+    ]
   }
 }

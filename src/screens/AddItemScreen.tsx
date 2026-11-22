@@ -240,7 +240,23 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
         </View>
 
         <Text style={[styles.label, { color: theme.muted }]}>Date d’expiration</Text>
-        {Platform.OS === 'ios' ? (
+        {Platform.OS === 'web' ? (
+          React.createElement('input', {
+            type: 'date',
+            value: toISODate(date),
+            onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+              if (e.target.value) chooseDate(parseISODate(e.target.value));
+            },
+            style: {
+              padding: 12,
+              fontSize: 16,
+              borderRadius: 12,
+              border: `1px solid ${theme.border}`,
+              backgroundColor: theme.card,
+              color: theme.text,
+            },
+          })
+        ) : Platform.OS === 'ios' ? (
           <View style={styles.dateIos}>
             <DateTimePicker value={date} mode="date" display="compact" locale="fr-FR" onChange={onChangeDate} />
           </View>
