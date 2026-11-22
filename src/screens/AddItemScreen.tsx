@@ -57,9 +57,9 @@ const PRESETS: Record<Location, { label: string; apply: (d: Date) => Date }[]> =
     { label: '2 semaines', apply: (d) => addDays(d, 14) },
     { label: '1 mois', apply: (d) => addMonths(d, 1) },
   ],
-  congelo: [
+  placard: [
+    { label: '1 semaine', apply: (d) => addDays(d, 7) },
     { label: '1 mois', apply: (d) => addMonths(d, 1) },
-    { label: '3 mois', apply: (d) => addMonths(d, 3) },
     { label: '6 mois', apply: (d) => addMonths(d, 6) },
     { label: '1 an', apply: (d) => addMonths(d, 12) },
   ],
