@@ -174,7 +174,7 @@ export default function App() {
         <AddItemScreen
           barcode={mode.barcode}
           editing={editing}
-          defaultLocation={tab === 'congelo' ? 'congelo' : 'frigo'}
+          defaultLocation={tab === 'placard' ? 'placard' : 'frigo'}
           onSave={(data) => void handleSave(data)}
           onDelete={editing ? () => void handleDelete(editing) : undefined}
           onCancel={() => setMode({ type: 'list' })}
@@ -187,7 +187,7 @@ export default function App() {
   const toBuy = shopping.filter((s) => !s.done).length;
   const tabs: { key: Tab; label: string }[] = [
     { key: 'frigo', label: `Frigo (${count('frigo')})` },
-    { key: 'congelo', label: `Congélo (${count('congelo')})` },
+    { key: 'placard', label: `Hors frigo (${count('placard')})` },
     { key: 'recettes', label: 'Recettes' },
     { key: 'courses', label: toBuy > 0 ? `Courses (${toBuy})` : 'Courses' },
   ];
@@ -209,7 +209,7 @@ export default function App() {
                 { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border },
               ]}
             >
-              <Text style={{ color: active ? theme.onPrimary : theme.text, fontWeight: '600', fontSize: 12 }} numberOfLines={1}>
+              <Text style={{ color: active ? theme.onPrimary : theme.text, fontWeight: '600', fontSize: 12, textAlign: 'center' }} numberOfLines={2}>
                 {t.label}
               </Text>
             </Pressable>
@@ -228,7 +228,7 @@ export default function App() {
             emptyText={
               tab === 'frigo'
                 ? 'Votre frigo est vide. Scannez un produit pour commencer.'
-                : 'Votre congélateur est vide. Scannez un produit pour commencer.'
+                : 'Rien en dehors du frigo pour le moment (placard, fruits, conserves…). Scannez un produit pour commencer.'
             }
             onEdit={(item) => setMode({ type: 'add', editing: item })}
             onUse={(item) => void handleUse(item)}
@@ -236,7 +236,7 @@ export default function App() {
         )}
       </View>
 
-      {(tab === 'frigo' || tab === 'congelo') && (
+      {(tab === 'frigo' || tab === 'placard') && (
         <View style={[styles.bottom, { backgroundColor: theme.bg, borderTopColor: theme.border }]}>
           <Button title="Scanner un produit" onPress={() => setMode({ type: 'scan' })} />
           <Button title="Ajouter à la main" variant="secondary" onPress={() => setMode({ type: 'add' })} />

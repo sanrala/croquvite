@@ -1,14 +1,14 @@
 # Croqu'Vite
 
-Application mobile (Android + iOS) pour suivre le contenu du frigo et du congélateur, dans l'esprit de Friio.
+Application mobile (Android + iOS) pour suivre le contenu du frigo et des produits hors frigo (placard, fruits, conserves), dans l'esprit de Friio.
 
 ## Fonctions
 
 - **Scan du code-barres** : le nom, la marque, la photo et la catégorie viennent d'[Open Food Facts](https://world.openfoodfacts.org) (gratuit, sans clé API). Les produits déjà scannés ou renommés sont mémorisés, même hors ligne.
 - **Produits frais / sans code-barres** : saisie à la main avec une **date d'expiration suggérée** selon le type de produit (modifiable, à remplacer par la date de l'emballage).
-- **Frigo et congélateur** triés par urgence, avec code couleur : rouge = périmé, orange = à consommer sous 3 jours, vert = ok.
-- **Notifications locales** : frigo → 3 jours et 1 jour avant ; congélateur → 7 jours et 1 jour avant (à 9 h). Réglable dans `src/notifications.ts` (`REMINDER_DAYS`).
-- **Recettes** à partir du frigo (option : inclure le congélateur). Les recettes qui utilisent les produits proches de la date limite passent en premier ; les produits périmés sont ignorés.
+- **Frigo et hors frigo** triés par urgence, avec code couleur : rouge = périmé, orange = à consommer sous 3 jours, vert = ok.
+- **Notifications locales** : frigo → 3 jours et 1 jour avant ; hors frigo → 7 jours et 1 jour avant (à 9 h). Réglable dans `src/notifications.ts` (`REMINDER_DAYS`).
+- **Recettes** à partir du frigo (option : inclure les produits hors frigo, comme les pâtes ou le riz). Les recettes qui utilisent les produits proches de la date limite passent en premier ; les produits périmés sont ignorés.
 - **Liste de courses** : ajout à la main, ou en un clic depuis une recette (« Ajouter les manquants aux courses »).
 - Données **100 % locales** sur le téléphone, aucun compte.
 
@@ -55,7 +55,7 @@ npx expo start
 
 1. Acceptez l'accès à la **caméra** (scan) et aux **notifications** (rappels d'expiration) quand l'application le demande. Si vous avez refusé, réactivez-les dans Réglages > Expo Go.
 2. Touchez **Scanner un produit** et visez un code-barres (EAN-13 / EAN-8 / UPC).
-3. Vérifiez le nom, choisissez Frigo ou Congélateur, ajustez la quantité et la date d'expiration, puis **Enregistrer**.
+3. Vérifiez le nom, choisissez Frigo ou Hors frigo, ajustez la quantité et la date d'expiration, puis **Enregistrer**.
 4. Ouvrez l'onglet **Recettes** pour voir les idées, et **Courses** pour la liste.
 
 Test rapide des notifications : ajoutez un produit qui expire demain, il doit déclencher un rappel le jour même à 9 h.
@@ -79,7 +79,7 @@ Pour publier sur les stores : `eas submit --platform android` / `eas submit --pl
 ## Structure
 
 ```
-App.tsx                      onglets Frigo / Congélo / Recettes / Courses, état global
+App.tsx                      onglets Frigo / Hors frigo / Recettes / Courses, état global
 src/types.ts                 modèles FoodItem, ShoppingItem, catégories
 src/storage.ts               stockage local + mémoire des codes-barres connus
 src/openFoodFacts.ts         identification d'un produit (nom, photo, catégorie)

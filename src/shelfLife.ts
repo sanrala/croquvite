@@ -69,20 +69,48 @@ const FRIDGE_DEFAULT: Record<Category, number> = {
   autre: 7,
 };
 
-const FREEZER_DEFAULT: Record<Category, number> = {
-  laitier: 90,
-  viande: 180,
-  poisson: 120,
-  'fruits-legumes': 300,
-  plat: 90,
-  boisson: 90,
-  epicerie: 90,
+/** Produits conservés hors du frigo (placard, corbeille de fruits, cave…). */
+const PANTRY_OVERRIDES: [string, number][] = [
+  ['pomme de terre', 30],
+  ['pommes de terre', 30],
+  ['oignon', 30],
+  ['ail', 30],
+  ['pomme', 14],
+  ['orange', 14],
+  ['citron', 14],
+  ['banane', 5],
+  ['tomate', 5],
+  ['pain', 3],
+  ['pates', 365],
+  ['spaghetti', 365],
+  ['riz', 365],
+  ['farine', 180],
+  ['sucre', 730],
+  ['huile', 365],
+  ['conserve', 730],
+  ['biscuit', 120],
+  ['cereale', 180],
+  ['jus', 180],
+  ['biere', 180],
+];
+
+const PANTRY_DEFAULT: Record<Category, number> = {
+  laitier: 60,
+  viande: 90,
+  poisson: 365,
+  'fruits-legumes': 7,
+  plat: 365,
+  boisson: 180,
+  epicerie: 180,
   autre: 90,
 };
 
 export function suggestExpiryDays(name: string, location: Location, category: Category): number {
-  if (location === 'congelo') return FREEZER_DEFAULT[category];
   const text = normalize(name);
+  if (location === 'placard') {
+    const found = PANTRY_OVERRIDES.find(([kw]) => hasKeyword(text, kw));
+    return found ? found[1] : PANTRY_DEFAULT[category];
+  }
   const match = FRIDGE_OVERRIDES.find(([kw]) => hasKeyword(text, kw));
   return match ? match[1] : FRIDGE_DEFAULT[category];
 }

@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { FoodItem, ShoppingItem } from './types';
+import { FoodItem, Location, ShoppingItem } from './types';
 
 const ITEMS_KEY = 'frigo:items:v1';
 const PRODUCTS_KEY = 'frigo:known-products:v1';
@@ -8,7 +8,11 @@ const SHOPPING_KEY = 'frigo:shopping:v1';
 export async function loadItems(): Promise<FoodItem[]> {
   try {
     const raw = await AsyncStorage.getItem(ITEMS_KEY);
-    return raw ? (JSON.parse(raw) as FoodItem[]) : [];
+    const parsed = raw
+      ? (JSON.parse(raw) as (Omit<FoodItem, 'location'> & { location: Location | 'congelo' })[])
+      : [];
+    // Les anciens produits « congélateur » deviennent « hors frigo ».
+    return parsed.map((i) => ({ ...i, location: i.location === 'congelo' ? 'placard' : i.location }));
   } catch {
     return [];
   }

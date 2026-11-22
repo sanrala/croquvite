@@ -1,8 +1,8 @@
-export type Location = 'frigo' | 'congelo';
+export type Location = 'frigo' | 'placard';
 
 export const LOCATION_LABEL: Record<Location, string> = {
   frigo: 'Frigo',
-  congelo: 'Congélateur',
+  placard: 'Hors frigo',
 };
 
 export type Category =

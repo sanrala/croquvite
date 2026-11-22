@@ -20,12 +20,12 @@ const ICON: Record<RecipeLine['status'], string> = {
 
 export function RecipesScreen({ items, onAddToShopping }: Props) {
   const theme = useTheme();
-  const [withFreezer, setWithFreezer] = useState(false);
+  const [withPantry, setWithPantry] = useState(true);
   const [openId, setOpenId] = useState<string | null>(null);
 
   const pool = useMemo(
-    () => items.filter((i) => withFreezer || i.location === 'frigo'),
-    [items, withFreezer],
+    () => items.filter((i) => withPantry || i.location === 'frigo'),
+    [items, withPantry],
   );
   const suggestions = useMemo(() => suggestRecipes(pool), [pool]);
   const expiredCount = pool.filter((i) => daysUntil(i.expiryDate) < 0).length;
@@ -39,8 +39,8 @@ export function RecipesScreen({ items, onAddToShopping }: Props) {
   return (
     <ScrollView contentContainerStyle={styles.content}>
       <View style={[styles.toggle, { backgroundColor: theme.card, borderColor: theme.border }]}>
-        <Text style={{ color: theme.text, flex: 1 }}>Inclure le congélateur</Text>
-        <Switch value={withFreezer} onValueChange={setWithFreezer} />
+        <Text style={{ color: theme.text, flex: 1 }}>Inclure les produits hors frigo</Text>
+        <Switch value={withPantry} onValueChange={setWithPantry} />
       </View>
 
       {expiredCount > 0 && (

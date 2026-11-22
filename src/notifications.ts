@@ -8,7 +8,7 @@ const CHANNEL_ID = 'expiry';
 /** Combien de jours avant l'expiration on prévient (0 = le jour même, à 9 h). */
 const REMINDER_DAYS: Record<Location, number[]> = {
   frigo: [3, 1],
-  congelo: [7, 1],
+  placard: [7, 1],
 };
 
 Notifications.setNotificationHandler({
@@ -51,7 +51,7 @@ export async function scheduleExpiryNotifications(item: FoodItem): Promise<strin
 
     const id = await Notifications.scheduleNotificationAsync({
       content: {
-        title: item.location === 'frigo' ? 'À consommer bientôt' : 'À sortir du congélateur',
+        title: 'À consommer bientôt',
         body,
       },
       trigger: {
