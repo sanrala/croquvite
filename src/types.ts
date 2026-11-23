@@ -1,3 +1,5 @@
+import type { ProductKind } from './productKind';
+
 export type Location = 'frigo' | 'placard';
 
 export const LOCATION_LABEL: Record<Location, string> = {
@@ -44,6 +46,8 @@ export interface FoodItem {
   brand?: string;
   imageUrl?: string;
   category?: Category;
+  /** Type de produit fini (yaourt, compote, jus…), absent pour un produit brut. Voir productKind.ts. */
+  kind?: ProductKind;
   quantity: number;
   location: Location;
   /** Date d'expiration au format AAAA-MM-JJ (heure locale) */

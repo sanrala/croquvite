@@ -1,3 +1,4 @@
+import { categoryForKind, guessKind } from './productKind';
 import { hasKeyword, normalize } from './text';
 import { Category, Location } from './types';
 
@@ -21,6 +22,9 @@ const TAG_RULES: [Category, string[]][] = [
 
 /** Déduit une catégorie du nom (prioritaire) puis des catégories Open Food Facts. */
 export function guessCategory(name: string, offTags: string[] = []): Category {
+  // Un produit fini (yaourt aux fraises, compote…) prime sur les mots de son nom.
+  const kind = guessKind(name, offTags);
+  if (kind) return categoryForKind(kind);
   const text = normalize(name);
   for (const [category, keywords] of NAME_KEYWORDS) {
     if (keywords.some((k) => hasKeyword(text, k))) return category;

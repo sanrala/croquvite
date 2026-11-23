@@ -355,6 +355,7 @@ export default function App() {
       brand: data.brand,
       imageUrl: data.imageUrl,
       category: data.category,
+      kind: data.kind,
       quantity: data.quantity,
       location: data.location,
       expiryDate: data.expiryDate,

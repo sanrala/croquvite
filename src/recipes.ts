@@ -1,5 +1,6 @@
 import { daysUntil } from './dates';
 import { EXTRA_RECIPES } from './recipesExtra';
+import { guessKind, kindSatisfies, ProductKind } from './productKind';
 import { hasKeyword, normalize } from './text';
 import { FoodItem } from './types';
 
@@ -435,7 +436,7 @@ function urgencyWeight(days: number): number {
 export function suggestRecipes(allItems: FoodItem[], limit = 20): RecipeSuggestion[] {
   const items = allItems
     .filter((i) => daysUntil(i.expiryDate) >= 0)
-    .map((item) => ({ item, text: normalize(item.name) }));
+    .map((item) => ({ item, text: normalize(item.name), kind: (item.kind ?? guessKind(item.name)) as ProductKind | undefined }));
 
   const suggestions: RecipeSuggestion[] = [];
 
@@ -454,7 +455,10 @@ export function suggestRecipes(allItems: FoodItem[], limit = 20): RecipeSuggesti
       if (!ing.optional) requiredCount++;
 
       const best = items
-        .filter(({ text }) => ing.keywords.some((k) => hasKeyword(text, k)))
+        .filter(({ text, kind }) =>
+          // Un produit fini ne sert que pour les ingrédients de son type ; un produit brut est repéré par son nom.
+          kind ? kindSatisfies(kind, ing.keywords) : ing.keywords.some((k) => hasKeyword(text, k)),
+        )
         .sort((a, b) => daysUntil(a.item.expiryDate) - daysUntil(b.item.expiryDate))[0]?.item;
 
       if (best) {

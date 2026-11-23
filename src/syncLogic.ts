@@ -1,3 +1,4 @@
+import { upgradeItem } from './productKind';
 import type { FoodItem, Location, ShoppingItem } from './types';
 
 /** Logique pure de synchronisation (sans Firebase ni React Native), donc facile à tester. */
@@ -58,6 +59,7 @@ export function normalizeRemoteItems(list: unknown[]): FoodItem[] {
       quantity: Number(i.quantity) > 0 ? Number(i.quantity) : 1,
       addedAt: typeof i.addedAt === 'string' ? i.addedAt : '',
     }))
+    .map(upgradeItem)
     .sort((a, b) => b.addedAt.localeCompare(a.addedAt) || a.id.localeCompare(b.id));
 }
 

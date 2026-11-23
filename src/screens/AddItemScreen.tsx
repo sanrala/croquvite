@@ -16,6 +16,7 @@ import { Button } from '../components/Button';
 import { confirmAction, notify } from '../dialog';
 import { addDays, formatFR, parseISODate, startOfToday, toISODate } from '../dates';
 import { lookupBarcode } from '../openFoodFacts';
+import { guessKind, ProductKind } from '../productKind';
 import { guessCategory, suggestExpiryDays } from '../shelfLife';
 import { getKnownProduct } from '../storage';
 import { useTheme } from '../theme';
@@ -28,6 +29,7 @@ export interface ItemFormData {
   imageUrl?: string;
   category: Category;
   categoryTags: string[];
+  kind?: ProductKind;
   quantity: number;
   location: Location;
   expiryDate: string;
@@ -152,6 +154,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
       imageUrl,
       category,
       categoryTags: offTags,
+      kind: guessKind(trimmed, offTags),
       quantity,
       location,
       expiryDate: toISODate(date),
