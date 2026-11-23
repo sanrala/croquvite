@@ -35,6 +35,7 @@ import {
   saveShopping,
   setMergePending,
 } from './src/storage';
+import { describeSyncError } from './src/syncErrors';
 import {
   normalizeRemoteItems,
   normalizeRemoteShopping,
@@ -63,6 +64,7 @@ export default function App() {
   const [mode, setMode] = useState<Mode>({ type: 'list' });
   const [user, setUser] = useState<User | null>(null);
   const [sync, setSync] = useState<SyncStatus>('off');
+  const [syncDetail, setSyncDetail] = useState<string | null>(null);
   const [bannerHidden, setBannerHidden] = useState(true);
 
   // Les références évitent de lire une valeur périmée dans les callbacks de synchronisation.
@@ -116,6 +118,7 @@ export default function App() {
     const uid = user?.uid;
     if (!uid || !loaded) {
       setSync('off');
+      setSyncDetail(null);
       return;
     }
 
@@ -125,8 +128,8 @@ export default function App() {
     const stale = () => cancelled || userRef.current?.uid !== uid;
 
     // À la connexion : envoie au compte les produits présents seulement sur cet appareil.
-    const mergeIfNeeded = async (): Promise<boolean> => {
-      if (!(await isMergePending())) return true;
+    const mergeIfNeeded = async (): Promise<{ ok: true } | { ok: false; error: unknown }> => {
+      if (!(await isMergePending())) return { ok: true };
       try {
         const [remoteItems, remoteShopping] = await Promise.all([
           fetchCollection<FoodItem>(uid, 'items'),
@@ -137,21 +140,30 @@ export default function App() {
         await uploadAll(uid, 'items', itemsRef.current.filter((i) => !remoteItemIds.has(i.id)), stripItem);
         await uploadAll(uid, 'shopping', shoppingRef.current.filter((i) => !remoteShoppingIds.has(i.id)), stripShopping);
         await setMergePending(false);
-        return true;
-      } catch {
-        return false; // hors connexion : on réessaie plus tard, sans écraser les données de l'appareil
+        return { ok: true };
+      } catch (error) {
+        return { ok: false, error }; // on réessaie plus tard, sans écraser les données de l'appareil
       }
+    };
+
+    const report = (error: unknown) => {
+      const problem = describeSyncError(error);
+      setSync(problem.kind === 'network' ? 'offline' : 'error');
+      setSyncDetail(problem.message);
+      return problem;
     };
 
     const start = async () => {
       setSync('syncing');
       const merged = await mergeIfNeeded();
       if (stale()) return;
-      if (!merged) {
-        setSync('offline');
-        timer = setTimeout(() => void start(), 15000);
+      if (!merged.ok) {
+        const problem = report(merged.error);
+        // Une erreur de configuration (règles, base absente) se corrige dans Firebase : on réessaie toute seule.
+        timer = setTimeout(() => void start(), problem.kind === 'network' ? 15000 : 30000);
         return;
       }
+      setSyncDetail(null);
 
       unsubscribers.push(
         subscribe<FoodItem>(
@@ -160,6 +172,7 @@ export default function App() {
           (list, fromCache) => {
             if (stale()) return;
             setSync(fromCache ? 'offline' : 'ok');
+            if (!fromCache) setSyncDetail(null);
             // Hors connexion au démarrage, le cache peut être vide : on garde alors les données de l'appareil.
             if (fromCache && list.length === 0) return;
             const next = normalizeRemoteItems(list);
@@ -167,7 +180,7 @@ export default function App() {
             applyItems(next);
             void saveItems(next);
           },
-          () => !stale() && setSync('error'),
+          (error) => !stale() && report(error),
         ),
       );
       unsubscribers.push(
@@ -182,7 +195,7 @@ export default function App() {
             applyShopping(next);
             void saveShopping(next);
           },
-          () => !stale() && setSync('error'),
+          (error) => !stale() && report(error),
         ),
       );
     };
@@ -365,6 +378,7 @@ export default function App() {
       <AccountScreen
         user={user}
         sync={sync}
+        syncDetail={syncDetail}
         onBack={() => setMode({ type: 'list' })}
         onPrivacy={() => setMode({ type: 'privacy', from: 'account' })}
         onAuthStart={() => setMergePending(true)}

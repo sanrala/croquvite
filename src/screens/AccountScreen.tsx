@@ -17,6 +17,8 @@ import { SYNC_LABEL, SyncStatus } from '../types';
 interface Props {
   user: User | null;
   sync: SyncStatus;
+  /** Explication affichée quand la synchronisation ne fonctionne pas. */
+  syncDetail?: string | null;
   onBack: () => void;
   onPrivacy: () => void;
   /** Appelé juste avant une tentative de connexion (prépare la fusion des produits de l'appareil). */
@@ -33,6 +35,7 @@ type FormMode = 'login' | 'signup' | 'reset';
 export function AccountScreen({
   user,
   sync,
+  syncDetail,
   onBack,
   onPrivacy,
   onAuthStart,
@@ -127,6 +130,9 @@ export function AccountScreen({
           <Text style={{ color: sync === 'error' ? theme.danger : sync === 'ok' ? theme.ok : theme.muted }}>
             ☁ {SYNC_LABEL[sync]}
           </Text>
+          {syncDetail && sync !== 'ok' ? (
+            <Text style={{ color: sync === 'error' ? theme.danger : theme.warn, fontSize: 13 }}>{syncDetail}</Text>
+          ) : null}
         </View>
 
         <Text style={{ color: theme.muted }}>

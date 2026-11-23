@@ -44,17 +44,17 @@ export function getServices(): FirebaseServices | null {
 
   let db: Firestore;
   try {
-    db =
-      Platform.OS === 'web'
-        ? initializeFirestore(app, {
-            ignoreUndefinedProperties: true,
-            // Cache hors ligne dans le navigateur (IndexedDB), partagé entre les onglets.
-            localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }),
-          })
-        : initializeFirestore(app, {
-            ignoreUndefinedProperties: true,
-            experimentalAutoDetectLongPolling: true,
-          });
+    const canPersist = Platform.OS === 'web' && typeof indexedDB !== 'undefined';
+    db = initializeFirestore(app, {
+      ignoreUndefinedProperties: true,
+      // Bascule automatiquement sur une connexion plus simple (long polling) quand le navigateur,
+      // un VPN ou un filtre réseau gêne la connexion habituelle à Firestore.
+      experimentalAutoDetectLongPolling: true,
+      // Cache hors ligne dans le navigateur (IndexedDB), partagé entre les onglets.
+      ...(canPersist
+        ? { localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() }) }
+        : {}),
+    });
   } catch {
     db = getFirestore(app); // déjà initialisé
   }
