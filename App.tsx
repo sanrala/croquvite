@@ -1,7 +1,7 @@
 import { StatusBar } from 'expo-status-bar';
-import React, { useEffect, useState } from 'react';
+import type { User } from 'firebase/auth';
+import React, { useEffect, useRef, useState } from 'react';
 import {
-  Alert,
   Platform,
   Pressable,
   SafeAreaView,
@@ -10,28 +10,49 @@ import {
   Text,
   View,
 } from 'react-native';
+import { deleteAccount, logOut, watchAuth } from './src/auth';
+import { fetchCollection, pushDiff, subscribe, uploadAll } from './src/cloud';
 import { Button } from './src/components/Button';
+import { confirmAction, notify } from './src/dialog';
+import { firebaseConfigured } from './src/firebaseConfig';
 import { makeId } from './src/id';
-import {
-  cancelNotifications,
-  ensureNotificationPermission,
-  scheduleExpiryNotifications,
-} from './src/notifications';
+import { ensureNotificationPermission, syncNotifications } from './src/notifications';
+import { AccountScreen } from './src/screens/AccountScreen';
 import { AddItemScreen, ItemFormData } from './src/screens/AddItemScreen';
 import { InventoryScreen } from './src/screens/InventoryScreen';
+import { PrivacyScreen } from './src/screens/PrivacyScreen';
 import { RecipesScreen } from './src/screens/RecipesScreen';
 import { ScannerScreen } from './src/screens/ScannerScreen';
 import { ShoppingScreen } from './src/screens/ShoppingScreen';
-import { loadItems, loadShopping, rememberProduct, saveItems, saveShopping } from './src/storage';
+import {
+  dismissBanner,
+  isBannerDismissed,
+  isMergePending,
+  loadItems,
+  loadShopping,
+  rememberProduct,
+  saveItems,
+  saveShopping,
+  setMergePending,
+} from './src/storage';
+import {
+  normalizeRemoteItems,
+  normalizeRemoteShopping,
+  sameJSON,
+  stripItem,
+  stripShopping,
+} from './src/syncLogic';
 import { useTheme } from './src/theme';
-import { FoodItem, Location, ShoppingItem } from './src/types';
+import { FoodItem, Location, ShoppingItem, SYNC_LABEL, SyncStatus } from './src/types';
 
 type Tab = Location | 'recettes' | 'courses';
 
 type Mode =
   | { type: 'list' }
   | { type: 'scan' }
-  | { type: 'add'; barcode?: string; editing?: FoodItem };
+  | { type: 'add'; barcode?: string; editing?: FoodItem }
+  | { type: 'account' }
+  | { type: 'privacy'; from: 'list' | 'account' };
 
 export default function App() {
   const theme = useTheme();
@@ -40,38 +61,167 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>('frigo');
   const [mode, setMode] = useState<Mode>({ type: 'list' });
+  const [user, setUser] = useState<User | null>(null);
+  const [sync, setSync] = useState<SyncStatus>('off');
+  const [bannerHidden, setBannerHidden] = useState(true);
 
+  // Les références évitent de lire une valeur périmée dans les callbacks de synchronisation.
+  const itemsRef = useRef<FoodItem[]>([]);
+  const shoppingRef = useRef<ShoppingItem[]>([]);
+  const userRef = useRef<User | null>(null);
+
+  const applyItems = (next: FoodItem[]) => {
+    itemsRef.current = next;
+    setItems(next);
+  };
+  const applyShopping = (next: ShoppingItem[]) => {
+    shoppingRef.current = next;
+    setShopping(next);
+  };
+
+  // --- Démarrage -------------------------------------------------------------
   useEffect(() => {
     (async () => {
-      const [storedItems, storedShopping] = await Promise.all([loadItems(), loadShopping()]);
-      setItems(storedItems);
-      setShopping(storedShopping);
+      const [storedItems, storedShopping, dismissed] = await Promise.all([
+        loadItems(),
+        loadShopping(),
+        isBannerDismissed(),
+      ]);
+      applyItems(storedItems);
+      applyShopping(storedShopping);
+      setBannerHidden(dismissed);
       setLoaded(true);
-      await ensureNotificationPermission();
+      if (Platform.OS !== 'web') await ensureNotificationPermission().catch(() => false);
     })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // --- Rappels d'expiration (par appareil, y compris pour les produits venus du cloud) ---
+  useEffect(() => {
+    if (loaded) void syncNotifications(items);
+  }, [items, loaded]);
+
+  // --- État de connexion -----------------------------------------------------
+  useEffect(
+    () =>
+      watchAuth((u) => {
+        userRef.current = u;
+        setUser(u);
+      }),
+    [],
+  );
+
+  // --- Synchronisation avec le compte ---------------------------------------
+  useEffect(() => {
+    const uid = user?.uid;
+    if (!uid || !loaded) {
+      setSync('off');
+      return;
+    }
+
+    let cancelled = false;
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const unsubscribers: (() => void)[] = [];
+    const stale = () => cancelled || userRef.current?.uid !== uid;
+
+    // À la connexion : envoie au compte les produits présents seulement sur cet appareil.
+    const mergeIfNeeded = async (): Promise<boolean> => {
+      if (!(await isMergePending())) return true;
+      try {
+        const [remoteItems, remoteShopping] = await Promise.all([
+          fetchCollection<FoodItem>(uid, 'items'),
+          fetchCollection<ShoppingItem>(uid, 'shopping'),
+        ]);
+        const remoteItemIds = new Set(remoteItems.map((i) => i.id));
+        const remoteShoppingIds = new Set(remoteShopping.map((i) => i.id));
+        await uploadAll(uid, 'items', itemsRef.current.filter((i) => !remoteItemIds.has(i.id)), stripItem);
+        await uploadAll(uid, 'shopping', shoppingRef.current.filter((i) => !remoteShoppingIds.has(i.id)), stripShopping);
+        await setMergePending(false);
+        return true;
+      } catch {
+        return false; // hors connexion : on réessaie plus tard, sans écraser les données de l'appareil
+      }
+    };
+
+    const start = async () => {
+      setSync('syncing');
+      const merged = await mergeIfNeeded();
+      if (stale()) return;
+      if (!merged) {
+        setSync('offline');
+        timer = setTimeout(() => void start(), 15000);
+        return;
+      }
+
+      unsubscribers.push(
+        subscribe<FoodItem>(
+          uid,
+          'items',
+          (list, fromCache) => {
+            if (stale()) return;
+            setSync(fromCache ? 'offline' : 'ok');
+            // Hors connexion au démarrage, le cache peut être vide : on garde alors les données de l'appareil.
+            if (fromCache && list.length === 0) return;
+            const next = normalizeRemoteItems(list);
+            if (sameJSON(next, itemsRef.current)) return;
+            applyItems(next);
+            void saveItems(next);
+          },
+          () => !stale() && setSync('error'),
+        ),
+      );
+      unsubscribers.push(
+        subscribe<ShoppingItem>(
+          uid,
+          'shopping',
+          (list, fromCache) => {
+            if (stale()) return;
+            if (fromCache && list.length === 0) return;
+            const next = normalizeRemoteShopping(list);
+            if (sameJSON(next, shoppingRef.current)) return;
+            applyShopping(next);
+            void saveShopping(next);
+          },
+          () => !stale() && setSync('error'),
+        ),
+      );
+    };
+
+    void start();
+    return () => {
+      cancelled = true;
+      if (timer) clearTimeout(timer);
+      unsubscribers.forEach((u) => u());
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [user?.uid, loaded]);
+
+  // --- Sauvegardes (local, puis cloud si connecté) ---------------------------------
   const persist = async (next: FoodItem[]) => {
-    setItems(next);
+    const prev = itemsRef.current;
+    applyItems(next);
     await saveItems(next);
+    const uid = userRef.current?.uid;
+    if (uid) pushDiff(uid, 'items', prev, next, stripItem).catch(() => setSync('error'));
   };
 
   const persistShopping = (next: ShoppingItem[]) => {
-    setShopping(next);
+    const prev = shoppingRef.current;
+    applyShopping(next);
     void saveShopping(next);
+    const uid = userRef.current?.uid;
+    if (uid) pushDiff(uid, 'shopping', prev, next, stripShopping).catch(() => setSync('error'));
   };
 
-  const schedule = async (item: FoodItem): Promise<string[]> => {
-    try {
-      return await scheduleExpiryNotifications(item);
-    } catch {
-      return [];
-    }
+  const clearLocalData = async () => {
+    applyItems([]);
+    applyShopping([]);
+    await Promise.all([saveItems([]), saveShopping([])]);
   };
 
+  // --- Produits ----------------------------------------------------------------
   const handleSave = async (data: ItemFormData) => {
     const editing = mode.type === 'add' ? mode.editing : undefined;
-    await ensureNotificationPermission();
 
     if (data.barcode) {
       await rememberProduct(data.barcode, {
@@ -95,8 +245,6 @@ export default function App() {
       }
     }
 
-    if (editing) await cancelNotifications(editing.notificationIds);
-
     const item: FoodItem = {
       id: editing?.id ?? makeId(),
       barcode: data.barcode,
@@ -108,30 +256,23 @@ export default function App() {
       location: data.location,
       expiryDate: data.expiryDate,
       addedAt: editing?.addedAt ?? new Date().toISOString(),
-      notificationIds: [],
     };
-    item.notificationIds = await schedule(item);
 
     await persist(editing ? items.map((i) => (i.id === editing.id ? item : i)) : [item, ...items]);
     setTab(data.location);
     setMode({ type: 'list' });
   };
 
-  const removeItem = async (item: FoodItem) => {
-    await cancelNotifications(item.notificationIds);
-    await persist(items.filter((i) => i.id !== item.id));
-  };
-
   const handleUse = async (item: FoodItem) => {
     if (item.quantity > 1) {
       await persist(items.map((i) => (i.id === item.id ? { ...i, quantity: i.quantity - 1 } : i)));
     } else {
-      await removeItem(item);
+      await persist(items.filter((i) => i.id !== item.id));
     }
   };
 
   const handleDelete = async (item: FoodItem) => {
-    await removeItem(item);
+    await persist(items.filter((i) => i.id !== item.id));
     setMode({ type: 'list' });
   };
 
@@ -139,19 +280,58 @@ export default function App() {
     const pending = new Set(shopping.filter((s) => !s.done).map((s) => s.name.toLowerCase()));
     const toAdd: ShoppingItem[] = labels
       .filter((l) => !pending.has(l.toLowerCase()))
-      .map((name) => ({ id: makeId(), name, done: false }));
+      .map((name) => ({ id: makeId(), name, done: false, createdAt: Date.now() }));
 
     if (toAdd.length === 0) {
-      Alert.alert('Déjà dans la liste', 'Ces produits sont déjà dans votre liste de courses.');
+      notify('Déjà dans la liste', 'Ces produits sont déjà dans votre liste de courses.');
       return;
     }
     persistShopping([...toAdd, ...shopping]);
-    Alert.alert('Liste de courses', `${toAdd.length} produit${toAdd.length > 1 ? 's' : ''} ajouté${toAdd.length > 1 ? 's' : ''}.`);
+    notify('Liste de courses', `${toAdd.length} produit${toAdd.length > 1 ? 's' : ''} ajouté${toAdd.length > 1 ? 's' : ''}.`);
+  };
+
+  // --- Compte --------------------------------------------------------------------
+  const handleSignOut = () => {
+    confirmAction(
+      'Se déconnecter ?',
+      'Vos produits restent dans votre compte. Cet appareil sera vidé et les retrouvera à la prochaine connexion.',
+      'Se déconnecter',
+      () => {
+        void (async () => {
+          userRef.current = null; // coupe tout envoi ou réception de données pendant la déconnexion
+          await logOut().catch(() => {});
+          await setMergePending(false);
+          await clearLocalData();
+          setMode({ type: 'list' });
+        })();
+      },
+      false,
+    );
+  };
+
+  const handleDeleteAccount = async (password?: string) => {
+    await deleteAccount(password);
+    userRef.current = null;
+    await setMergePending(false);
+    await clearLocalData();
+    setMode({ type: 'list' });
+    notify('Compte supprimé', 'Votre compte et vos données en ligne ont été supprimés.');
+  };
+
+  const hideBanner = () => {
+    setBannerHidden(true);
+    void dismissBanner();
   };
 
   if (!loaded) return null;
 
   const topPadding = Platform.OS === 'android' ? (RNStatusBar.currentHeight ?? 0) : 0;
+  const screen = (child: React.ReactNode) => (
+    <SafeAreaView style={[styles.root, { backgroundColor: theme.bg, paddingTop: topPadding }]}>
+      <StatusBar style="auto" />
+      {child}
+    </SafeAreaView>
+  );
 
   if (mode.type === 'scan') {
     return (
@@ -168,19 +348,37 @@ export default function App() {
 
   if (mode.type === 'add') {
     const editing = mode.editing;
-    return (
-      <SafeAreaView style={[styles.root, { backgroundColor: theme.bg, paddingTop: topPadding }]}>
-        <StatusBar style="auto" />
-        <AddItemScreen
-          barcode={mode.barcode}
-          editing={editing}
-          defaultLocation={tab === 'placard' ? 'placard' : 'frigo'}
-          onSave={(data) => void handleSave(data)}
-          onDelete={editing ? () => void handleDelete(editing) : undefined}
-          onCancel={() => setMode({ type: 'list' })}
-        />
-      </SafeAreaView>
+    return screen(
+      <AddItemScreen
+        barcode={mode.barcode}
+        editing={editing}
+        defaultLocation={tab === 'placard' ? 'placard' : 'frigo'}
+        onSave={(data) => void handleSave(data)}
+        onDelete={editing ? () => void handleDelete(editing) : undefined}
+        onCancel={() => setMode({ type: 'list' })}
+      />,
     );
+  }
+
+  if (mode.type === 'account') {
+    return screen(
+      <AccountScreen
+        user={user}
+        sync={sync}
+        onBack={() => setMode({ type: 'list' })}
+        onPrivacy={() => setMode({ type: 'privacy', from: 'account' })}
+        onAuthStart={() => setMergePending(true)}
+        onAuthFail={() => setMergePending(false)}
+        onSignedIn={() => setMode({ type: 'list' })}
+        onSignOut={handleSignOut}
+        onDeleteAccount={handleDeleteAccount}
+      />,
+    );
+  }
+
+  if (mode.type === 'privacy') {
+    const from = mode.from;
+    return screen(<PrivacyScreen onBack={() => setMode(from === 'account' ? { type: 'account' } : { type: 'list' })} />);
   }
 
   const count = (loc: Location) => items.filter((i) => i.location === loc).length;
@@ -191,11 +389,24 @@ export default function App() {
     { key: 'recettes', label: 'Recettes' },
     { key: 'courses', label: toBuy > 0 ? `Courses (${toBuy})` : 'Courses' },
   ];
+  const inventoryTab = tab === 'frigo' || tab === 'placard';
 
-  return (
-    <SafeAreaView style={[styles.root, { backgroundColor: theme.bg, paddingTop: topPadding }]}>
-      <StatusBar style="auto" />
-      <Text style={[styles.header, { color: theme.text }]}>Croqu'Vite</Text>
+  return screen(
+    <>
+      <View style={styles.headerRow}>
+        <Text style={[styles.header, { color: theme.text }]}>Croqu'Vite</Text>
+        {firebaseConfigured && (
+          <Pressable
+            onPress={() => setMode({ type: 'account' })}
+            accessibilityLabel={user ? 'Mon compte' : 'Se connecter'}
+            style={[styles.account, { borderColor: theme.border, backgroundColor: theme.card }]}
+          >
+            <Text style={{ color: user ? theme.primary : theme.text, fontWeight: '600', fontSize: 13 }}>
+              {user ? `☁ ${SYNC_LABEL[sync]}` : 'Se connecter'}
+            </Text>
+          </Pressable>
+        )}
+      </View>
 
       <View style={styles.tabs}>
         {tabs.map((t) => {
@@ -209,13 +420,33 @@ export default function App() {
                 { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border },
               ]}
             >
-              <Text style={{ color: active ? theme.onPrimary : theme.text, fontWeight: '600', fontSize: 12, textAlign: 'center' }} numberOfLines={2}>
+              <Text
+                style={{ color: active ? theme.onPrimary : theme.text, fontWeight: '600', fontSize: 12, textAlign: 'center' }}
+                numberOfLines={2}
+              >
                 {t.label}
               </Text>
             </Pressable>
           );
         })}
       </View>
+
+      {firebaseConfigured && !user && !bannerHidden && inventoryTab && (
+        <View style={[styles.banner, { backgroundColor: theme.card, borderColor: theme.border }]}>
+          <View style={{ flex: 1, gap: 2 }}>
+            <Text style={{ color: theme.text, fontWeight: '700' }}>Retrouvez vos produits partout</Text>
+            <Text style={{ color: theme.muted, fontSize: 13 }}>
+              Compte gratuit : synchronisez votre frigo entre votre téléphone et votre ordinateur.
+            </Text>
+            <Pressable onPress={() => setMode({ type: 'account' })} hitSlop={8}>
+              <Text style={{ color: theme.primary, fontWeight: '700', marginTop: 4 }}>Créer mon compte</Text>
+            </Pressable>
+          </View>
+          <Pressable onPress={hideBanner} accessibilityLabel="Masquer" hitSlop={10}>
+            <Text style={{ color: theme.muted, fontSize: 18 }}>✕</Text>
+          </Pressable>
+        </View>
+      )}
 
       <View style={{ flex: 1 }}>
         {tab === 'recettes' ? (
@@ -236,20 +467,37 @@ export default function App() {
         )}
       </View>
 
-      {(tab === 'frigo' || tab === 'placard') && (
+      {inventoryTab && (
         <View style={[styles.bottom, { backgroundColor: theme.bg, borderTopColor: theme.border }]}>
           <Button title="Scanner un produit" onPress={() => setMode({ type: 'scan' })} />
           <Button title="Ajouter à la main" variant="secondary" onPress={() => setMode({ type: 'add' })} />
+          <Pressable onPress={() => setMode({ type: 'privacy', from: 'list' })} hitSlop={8} style={{ alignSelf: 'center' }}>
+            <Text style={{ color: theme.muted, fontSize: 12, textDecorationLine: 'underline' }}>
+              Politique de confidentialité
+            </Text>
+          </Pressable>
         </View>
       )}
-    </SafeAreaView>
+    </>,
   );
 }
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  header: { fontSize: 26, fontWeight: '800', paddingHorizontal: 16, paddingTop: 12 },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12 },
+  header: { fontSize: 26, fontWeight: '800' },
+  account: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
   tabs: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
   tab: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center' },
+  banner: {
+    flexDirection: 'row',
+    alignItems: 'flex-start',
+    gap: 12,
+    marginHorizontal: 16,
+    marginBottom: 4,
+    padding: 12,
+    borderWidth: 1,
+    borderRadius: 14,
+  },
   bottom: { padding: 16, gap: 10, borderTopWidth: StyleSheet.hairlineWidth },
 });

@@ -35,6 +35,45 @@ export async function saveShopping(items: ShoppingItem[]): Promise<void> {
   await AsyncStorage.setItem(SHOPPING_KEY, JSON.stringify(items));
 }
 
+// --- Compte et synchronisation -------------------------------------------------
+
+const MERGE_KEY = 'frigo:merge-pending:v1';
+const BANNER_KEY = 'frigo:banner-dismissed:v1';
+
+/** Vrai entre le début d'une connexion et la fin de la fusion « produits de l'appareil → compte ». */
+export async function isMergePending(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(MERGE_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function setMergePending(pending: boolean): Promise<void> {
+  try {
+    if (pending) await AsyncStorage.setItem(MERGE_KEY, '1');
+    else await AsyncStorage.removeItem(MERGE_KEY);
+  } catch {
+    // sans importance
+  }
+}
+
+export async function isBannerDismissed(): Promise<boolean> {
+  try {
+    return (await AsyncStorage.getItem(BANNER_KEY)) === '1';
+  } catch {
+    return false;
+  }
+}
+
+export async function dismissBanner(): Promise<void> {
+  try {
+    await AsyncStorage.setItem(BANNER_KEY, '1');
+  } catch {
+    // sans importance
+  }
+}
+
 export interface KnownProduct {
   name: string;
   brand?: string;

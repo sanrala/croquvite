@@ -1,31 +1,9 @@
-# Dépendances (reconstituées via npm install)
 node_modules/
-
-# Expo & builds
 .expo/
 dist/
 web-build/
-expo-env.d.ts
-
-# Dossiers natifs générés
-android/
-ios/
-
-# Clés et certificats sensibles
-*.jks
-*.p8
-*.p12
-*.key
-*.mobileprovision
-*.orig.*
-
-# Caches & logs
-.metro-health-check*
-npm-debug.*
-yarn-debug.*
-yarn-error.*
-
-# Système & éditeurs
+.vercel/
+*.log
 .DS_Store
-Thumbs.db
-.env*.local
+.env
+.env.local

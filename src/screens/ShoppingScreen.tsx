@@ -17,7 +17,7 @@ export function ShoppingScreen({ items, onChange }: Props) {
   const add = () => {
     const name = text.trim();
     if (!name) return;
-    onChange([{ id: makeId(), name, done: false }, ...items]);
+    onChange([{ id: makeId(), name, done: false, createdAt: Date.now() }, ...items]);
     setText('');
   };
 

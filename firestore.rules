@@ -1,0 +1,30 @@
+rules_version = '2';
+
+// Chaque utilisateur ne peut lire et écrire QUE ses propres données (users/{son identifiant}/...).
+// Tout le reste est refusé. À coller dans Firebase console > Firestore Database > Règles > Publier.
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+
+    // Produits du frigo / hors frigo
+    match /users/{userId}/items/{itemId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.size() <= 20;
+    }
+
+    // Liste de courses
+    match /users/{userId}/shopping/{itemId} {
+      allow read, delete: if isOwner(userId);
+      allow create, update: if isOwner(userId)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() <= 200
+        && request.resource.data.size() <= 10;
+    }
+  }
+}

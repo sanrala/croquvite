@@ -49,12 +49,26 @@ export interface FoodItem {
   /** Date d'expiration au format AAAA-MM-JJ (heure locale) */
   expiryDate: string;
   addedAt: string;
-  /** Identifiants des notifications planifiées pour cet article */
-  notificationIds: string[];
+  /**
+   * Ancien champ (versions précédentes) : rappels planifiés sur CET appareil.
+   * Il n'est plus synchronisé ; les rappels sont maintenant gérés par appareil (voir notifications.ts).
+   */
+  notificationIds?: string[];
 }
 
 export interface ShoppingItem {
   id: string;
   name: string;
   done: boolean;
+  createdAt?: number;
 }
+
+export type SyncStatus = 'off' | 'syncing' | 'ok' | 'offline' | 'error';
+
+export const SYNC_LABEL: Record<SyncStatus, string> = {
+  off: 'Non connecté',
+  syncing: 'Synchronisation…',
+  ok: 'Synchronisé',
+  offline: 'En attente de connexion',
+  error: 'Erreur de synchronisation',
+};

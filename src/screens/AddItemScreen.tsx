@@ -2,7 +2,6 @@ import DateTimePicker, { DateTimePickerEvent } from '@react-native-community/dat
 import React, { useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   KeyboardAvoidingView,
   Platform,
@@ -14,6 +13,7 @@ import {
   View,
 } from 'react-native';
 import { Button } from '../components/Button';
+import { confirmAction, notify } from '../dialog';
 import { addDays, formatFR, parseISODate, startOfToday, toISODate } from '../dates';
 import { lookupBarcode } from '../openFoodFacts';
 import { guessCategory, suggestExpiryDays } from '../shelfLife';
@@ -142,7 +142,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
   const save = () => {
     const trimmed = name.trim();
     if (!trimmed) {
-      Alert.alert('Nom manquant', 'Indiquez le nom du produit.');
+      notify('Nom manquant', 'Indiquez le nom du produit.');
       return;
     }
     onSave({
@@ -160,10 +160,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
 
   const confirmDelete = () => {
     if (!onDelete) return;
-    Alert.alert('Supprimer ce produit ?', editing?.name, [
-      { text: 'Annuler', style: 'cancel' },
-      { text: 'Supprimer', style: 'destructive', onPress: onDelete },
-    ]);
+    confirmAction('Supprimer ce produit ?', editing?.name, 'Supprimer', onDelete);
   };
 
   const inputStyle = [styles.input, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }];
