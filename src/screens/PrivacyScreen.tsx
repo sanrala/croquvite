@@ -24,6 +24,7 @@ const SECTIONS: { title: string; body: string[] }[] = [
     body: [
       'Votre adresse e-mail (ou votre compte Google) et un identifiant de compte, pour vous connecter.',
       'Vos produits (nom, marque, photo du produit, catégorie, quantité, emplacement, date d’expiration, date d’ajout) et votre liste de courses, pour les retrouver sur tous vos appareils.',
+      'Si vous utilisez un foyer partagé : un nom d’affichage (votre nom Google, ou la partie de votre e-mail avant le @) visible par les autres membres du foyer. Vos produits et votre liste de courses y sont alors visibles et modifiables par tous ses membres.',
     ],
   },
   {

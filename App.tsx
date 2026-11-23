@@ -11,10 +11,22 @@ import {
   View,
 } from 'react-native';
 import { deleteAccount, logOut, watchAuth } from './src/auth';
-import { fetchCollection, pushDiff, subscribe, uploadAll } from './src/cloud';
+import { fetchCollection, householdSpace, personalSpace, pushDiff, subscribe, uploadAll } from './src/cloud';
 import { Button } from './src/components/Button';
 import { confirmAction, notify } from './src/dialog';
 import { firebaseConfigured } from './src/firebaseConfig';
+import {
+  cachedHouseholdId,
+  createHousehold,
+  findMyHousehold,
+  joinHousehold,
+  leaveHousehold,
+  regenerateCode,
+  rememberHouseholdId,
+  removeMember,
+  subscribeHousehold,
+} from './src/household';
+import { Household, memberLabel } from './src/householdLogic';
 import { makeId } from './src/id';
 import { ensureNotificationPermission, syncNotifications } from './src/notifications';
 import { AccountScreen } from './src/screens/AccountScreen';
@@ -66,11 +78,19 @@ export default function App() {
   const [sync, setSync] = useState<SyncStatus>('off');
   const [syncDetail, setSyncDetail] = useState<string | null>(null);
   const [bannerHidden, setBannerHidden] = useState(true);
+  // undefined = pas encore connu, null = aucun foyer.
+  const [household, setHousehold] = useState<Household | null | undefined>(undefined);
+  // Incrémenté pour relancer la synchronisation après création / arrivée / départ d'un foyer.
+  const [syncNonce, setSyncNonce] = useState(0);
 
   // Les références évitent de lire une valeur périmée dans les callbacks de synchronisation.
   const itemsRef = useRef<FoodItem[]>([]);
   const shoppingRef = useRef<ShoppingItem[]>([]);
   const userRef = useRef<User | null>(null);
+  /** Où écrire dans le cloud : users/{uid} ou households/{id}. null tant que non déterminé. */
+  const spaceRef = useRef<string | null>(null);
+  /** Vrai pendant un départ volontaire du foyer (pour ne pas afficher « vous avez été retiré »). */
+  const leavingRef = useRef(false);
 
   const applyItems = (next: FoodItem[]) => {
     itemsRef.current = next;
@@ -117,6 +137,8 @@ export default function App() {
   useEffect(() => {
     const uid = user?.uid;
     if (!uid || !loaded) {
+      spaceRef.current = null;
+      setHousehold(undefined);
       setSync('off');
       setSyncDetail(null);
       return;
@@ -128,17 +150,17 @@ export default function App() {
     const stale = () => cancelled || userRef.current?.uid !== uid;
 
     // À la connexion : envoie au compte les produits présents seulement sur cet appareil.
-    const mergeIfNeeded = async (): Promise<{ ok: true } | { ok: false; error: unknown }> => {
+    const mergeIfNeeded = async (space: string): Promise<{ ok: true } | { ok: false; error: unknown }> => {
       if (!(await isMergePending())) return { ok: true };
       try {
         const [remoteItems, remoteShopping] = await Promise.all([
-          fetchCollection<FoodItem>(uid, 'items'),
-          fetchCollection<ShoppingItem>(uid, 'shopping'),
+          fetchCollection<FoodItem>(space, 'items'),
+          fetchCollection<ShoppingItem>(space, 'shopping'),
         ]);
         const remoteItemIds = new Set(remoteItems.map((i) => i.id));
         const remoteShoppingIds = new Set(remoteShopping.map((i) => i.id));
-        await uploadAll(uid, 'items', itemsRef.current.filter((i) => !remoteItemIds.has(i.id)), stripItem);
-        await uploadAll(uid, 'shopping', shoppingRef.current.filter((i) => !remoteShoppingIds.has(i.id)), stripShopping);
+        await uploadAll(space, 'items', itemsRef.current.filter((i) => !remoteItemIds.has(i.id)), stripItem);
+        await uploadAll(space, 'shopping', shoppingRef.current.filter((i) => !remoteShoppingIds.has(i.id)), stripShopping);
         await setMergePending(false);
         return { ok: true };
       } catch (error) {
@@ -153,9 +175,74 @@ export default function App() {
       return problem;
     };
 
+    // Trouve le foyer de l'utilisateur. Hors connexion, on se fie à la dernière valeur connue.
+    const resolveHousehold = async (): Promise<{ ok: true; hid: string | null } | { ok: false; error: unknown }> => {
+      try {
+        const found = await findMyHousehold(uid);
+        await rememberHouseholdId(uid, found?.id ?? null);
+        if (!stale()) setHousehold(found);
+        return { ok: true, hid: found?.id ?? null };
+      } catch (error) {
+        const problem = describeSyncError(error);
+        const cached = await cachedHouseholdId(uid);
+        if (cached !== undefined && problem.kind === 'network') return { ok: true, hid: cached };
+        // Règles pas encore republiées : le compte seul continue de fonctionner, le foyer apparaîtra ensuite.
+        // (Si les règles du compte seul manquent aussi, la fusion juste après affichera l'erreur.)
+        if (problem.code === 'permission-denied') {
+          if (!stale()) setHousehold(null);
+          return { ok: true, hid: null };
+        }
+        return { ok: false, error };
+      }
+    };
+
+    // Plus membre (retiré, foyer supprimé) : on garde une copie sur l'appareil et on repart sur le compte seul.
+    const handleLost = () => {
+      void (async () => {
+        await setMergePending(true);
+        if (stale()) return;
+        if (leavingRef.current) return;
+        notify('Foyer', 'Vous ne faites plus partie de ce foyer. Vos produits restent sur cet appareil et sont ajoutés à votre compte.');
+        setSyncNonce((n) => n + 1);
+      })();
+    };
+
+    let householdWatched = false;
     const start = async () => {
       setSync('syncing');
-      const merged = await mergeIfNeeded();
+      const resolved = await resolveHousehold();
+      if (stale()) return;
+      if (!resolved.ok) {
+        const problem = report(resolved.error);
+        timer = setTimeout(() => void start(), problem.kind === 'network' ? 15000 : 30000);
+        return;
+      }
+      const hid = resolved.hid;
+      const space = hid ? householdSpace(hid) : personalSpace(uid);
+      spaceRef.current = space;
+
+      if (hid && !householdWatched) {
+        householdWatched = true;
+        unsubscribers.push(
+          subscribeHousehold(
+            hid,
+            (h, fromCache) => {
+              if (stale()) return;
+              if (!h) {
+                if (!fromCache) handleLost();
+                return;
+              }
+              setHousehold(h);
+            },
+            (error) => {
+              if (stale()) return;
+              if ((error as { code?: string } | null)?.code === 'permission-denied') handleLost();
+            },
+          ),
+        );
+      }
+
+      const merged = await mergeIfNeeded(space);
       if (stale()) return;
       if (!merged.ok) {
         const problem = report(merged.error);
@@ -167,7 +254,7 @@ export default function App() {
 
       unsubscribers.push(
         subscribe<FoodItem>(
-          uid,
+          space,
           'items',
           (list, fromCache) => {
             if (stale()) return;
@@ -185,7 +272,7 @@ export default function App() {
       );
       unsubscribers.push(
         subscribe<ShoppingItem>(
-          uid,
+          space,
           'shopping',
           (list, fromCache) => {
             if (stale()) return;
@@ -203,27 +290,30 @@ export default function App() {
     void start();
     return () => {
       cancelled = true;
+      spaceRef.current = null;
       if (timer) clearTimeout(timer);
       unsubscribers.forEach((u) => u());
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [user?.uid, loaded]);
+  }, [user?.uid, loaded, syncNonce]);
 
   // --- Sauvegardes (local, puis cloud si connecté) ---------------------------------
   const persist = async (next: FoodItem[]) => {
     const prev = itemsRef.current;
     applyItems(next);
     await saveItems(next);
-    const uid = userRef.current?.uid;
-    if (uid) pushDiff(uid, 'items', prev, next, stripItem).catch(() => setSync('error'));
+    const space = spaceRef.current;
+    if (space) pushDiff(space, 'items', prev, next, stripItem).catch(() => setSync('error'));
+    else if (userRef.current) void setMergePending(true); // espace pas encore connu : envoyé au prochain démarrage
   };
 
   const persistShopping = (next: ShoppingItem[]) => {
     const prev = shoppingRef.current;
     applyShopping(next);
     void saveShopping(next);
-    const uid = userRef.current?.uid;
-    if (uid) pushDiff(uid, 'shopping', prev, next, stripShopping).catch(() => setSync('error'));
+    const space = spaceRef.current;
+    if (space) pushDiff(space, 'shopping', prev, next, stripShopping).catch(() => setSync('error'));
+    else if (userRef.current) void setMergePending(true);
   };
 
   const clearLocalData = async () => {
@@ -312,6 +402,7 @@ export default function App() {
       () => {
         void (async () => {
           userRef.current = null; // coupe tout envoi ou réception de données pendant la déconnexion
+          spaceRef.current = null;
           await logOut().catch(() => {});
           await setMergePending(false);
           await clearLocalData();
@@ -325,11 +416,49 @@ export default function App() {
   const handleDeleteAccount = async (password?: string) => {
     await deleteAccount(password);
     userRef.current = null;
+    spaceRef.current = null;
     await setMergePending(false);
     await clearLocalData();
     setMode({ type: 'list' });
     notify('Compte supprimé', 'Votre compte et vos données en ligne ont été supprimés.');
   };
+
+  // --- Foyer ---------------------------------------------------------------------
+  const requireUser = (): User => {
+    const u = userRef.current;
+    if (!u) throw { code: 'app/not-signed-in' };
+    return u;
+  };
+
+  /** Les produits de cet appareil sont ajoutés au nouvel espace au redémarrage de la synchronisation. */
+  const switchSpace = async (action: () => Promise<unknown>) => {
+    await setMergePending(true);
+    try {
+      await action();
+    } catch (e) {
+      await setMergePending(false);
+      throw e;
+    }
+    setSyncNonce((n) => n + 1);
+  };
+
+  const handleCreateHousehold = () => {
+    const u = requireUser();
+    return switchSpace(() => createHousehold(u.uid, memberLabel(u)));
+  };
+  const handleJoinHousehold = (code: string) => {
+    const u = requireUser();
+    return switchSpace(() => joinHousehold(u.uid, memberLabel(u), code));
+  };
+  const handleLeaveHousehold = (h: Household) => {
+    const u = requireUser();
+    leavingRef.current = true;
+    return switchSpace(() => leaveHousehold(u.uid, h)).finally(() => {
+      leavingRef.current = false;
+    });
+  };
+  const handleRemoveMember = (h: Household, uid: string) => removeMember(h, uid);
+  const handleRegenerateCode = (h: Household) => regenerateCode(h);
 
   const hideBanner = () => {
     setBannerHidden(true);
@@ -379,6 +508,12 @@ export default function App() {
         user={user}
         sync={sync}
         syncDetail={syncDetail}
+        household={household}
+        onCreateHousehold={handleCreateHousehold}
+        onJoinHousehold={handleJoinHousehold}
+        onLeaveHousehold={handleLeaveHousehold}
+        onRemoveMember={handleRemoveMember}
+        onRegenerateCode={handleRegenerateCode}
         onBack={() => setMode({ type: 'list' })}
         onPrivacy={() => setMode({ type: 'privacy', from: 'account' })}
         onAuthStart={() => setMergePending(true)}

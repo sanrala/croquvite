@@ -15,6 +15,7 @@ import {
 import { Platform } from 'react-native';
 import { deleteAllUserData } from './cloud';
 import { getServices } from './firebase';
+import { findMyHousehold, leaveHousehold } from './household';
 
 /** La connexion Google passe par une fenêtre du navigateur : disponible sur le site web uniquement. */
 export const canUseGoogle = Platform.OS === 'web';
@@ -68,6 +69,12 @@ export async function deleteAccount(password?: string): Promise<void> {
   const user = needAuth().currentUser;
   if (!user) throw { code: 'app/not-signed-in' };
 
+  // Échec rapide, avant toute ré-authentification : l'administrateur doit d'abord retirer les autres membres.
+  const current = await findMyHousehold(user.uid);
+  if (current && current.ownerUid === user.uid && current.members.some((m) => m !== user.uid)) {
+    throw { code: 'app/owner-has-members' };
+  }
+
   if (usesPassword(user)) {
     if (!password) throw { code: 'app/password-required' };
     if (!user.email) throw { code: 'app/not-signed-in' };
@@ -75,6 +82,10 @@ export async function deleteAccount(password?: string): Promise<void> {
   } else if (canUseGoogle) {
     await reauthenticateWithPopup(user, new GoogleAuthProvider());
   }
+
+  // Foyer : on le quitte (ou on le supprime si on y est seul) avant de supprimer le compte.
+  const household = await findMyHousehold(user.uid);
+  if (household) await leaveHousehold(user.uid, household);
 
   await deleteAllUserData(user.uid);
   await deleteUser(user);
@@ -117,6 +128,12 @@ export function authErrorMessage(error: unknown): string {
       return 'Pour des raisons de sécurité, reconnectez-vous puis réessayez.';
     case 'app/google-web-only':
       return 'La connexion Google est disponible sur le site web. Utilisez votre e-mail ici.';
+    case 'app/owner-has-members':
+      return 'Vous êtes l’administrateur du foyer et d’autres personnes en font partie : retirez-les d’abord (Mon compte > Foyer), puis réessayez.';
+    case 'app/invalid-code':
+      return 'Code invalide. Il se compose de 8 caractères, par exemple K7QM-4XW9.';
+    case 'app/cannot-join':
+      return 'Impossible de rejoindre ce foyer : le code a changé, ou le foyer est complet (10 personnes au maximum).';
     case 'permission-denied':
     case 'firestore/permission-denied':
       return "Accès refusé : vérifiez que les règles Firestore du README sont publiées.";

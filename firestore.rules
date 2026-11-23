@@ -1,15 +1,22 @@
 rules_version = '2';
 
-// Chaque utilisateur ne peut lire et écrire QUE ses propres données (users/{son identifiant}/...).
-// Tout le reste est refusé. À coller dans Firebase console > Firestore Database > Règles > Publier.
+// À coller dans Firebase console > Firestore Database > Règles > Publier.
+//
+// - users/{uid}/...        : chaque personne accède uniquement à ses propres données.
+// - households/{id}/...    : un foyer est accessible uniquement à ses membres.
+// - invites/{code}         : permet de retrouver un foyer à partir de son code (lecture un par un, jamais en liste).
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    function isOwner(userId) {
-      return request.auth != null && request.auth.uid == userId;
+    function signedIn() {
+      return request.auth != null;
     }
 
-    // Produits du frigo / hors frigo
+    function isOwner(userId) {
+      return signedIn() && request.auth.uid == userId;
+    }
+
+    // ---------------------------------------------------------------- compte seul
     match /users/{userId}/items/{itemId} {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId)
@@ -18,13 +25,107 @@ service cloud.firestore {
         && request.resource.data.size() <= 20;
     }
 
-    // Liste de courses
     match /users/{userId}/shopping/{itemId} {
       allow read, delete: if isOwner(userId);
       allow create, update: if isOwner(userId)
         && request.resource.data.name is string
         && request.resource.data.name.size() <= 200
         && request.resource.data.size() <= 10;
+    }
+
+    // ---------------------------------------------------------------------- foyer
+    function householdPath(hid) {
+      return /databases/$(database)/documents/households/$(hid);
+    }
+
+    function isMember(hid) {
+      return signedIn() && request.auth.uid in get(householdPath(hid)).data.members;
+    }
+
+    // Un code est valable s'il existe ET qu'il a été créé par l'administrateur de ce foyer
+    // (sinon n'importe qui pourrait fabriquer un code qui pointe vers le foyer d'un autre).
+    function validJoinCode(hid) {
+      let code = request.resource.data.joinCode;
+      return code is string
+        && exists(/databases/$(database)/documents/invites/$(code))
+        && get(/databases/$(database)/documents/invites/$(code)).data.hid == hid
+        && get(/databases/$(database)/documents/invites/$(code)).data.ownerUid == resource.data.ownerUid;
+    }
+
+    match /households/{hid} {
+      // Lecture d'un foyer, ou requête « mes foyers » (where members array-contains uid).
+      allow read: if signedIn() && request.auth.uid in resource.data.members;
+
+      // Création : on en devient l'administrateur et le seul membre.
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.members == [request.auth.uid]
+        && request.resource.data.code is string
+        && request.resource.data.joinCode is string;
+
+      allow update: if signedIn() && (
+        // L'administrateur : retire des membres, renouvelle le code.
+        (resource.data.ownerUid == request.auth.uid
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['members', 'memberNames', 'code', 'joinCode'])
+          && request.auth.uid in request.resource.data.members)
+        ||
+        // Un membre (non administrateur) : se retire lui-même.
+        (request.auth.uid in resource.data.members
+          && resource.data.ownerUid != request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['members', 'memberNames'])
+          && resource.data.members.toSet().difference(request.resource.data.members.toSet())
+               .hasOnly([request.auth.uid])
+          && !(request.auth.uid in request.resource.data.members)
+          && request.resource.data.members.toSet().difference(resource.data.members.toSet()).size() == 0)
+        ||
+        // Une nouvelle personne : s'ajoute elle-même, avec un code valide, dans la limite de 10 membres.
+        (!(request.auth.uid in resource.data.members)
+          && request.resource.data.ownerUid == resource.data.ownerUid
+          && request.resource.data.diff(resource.data).affectedKeys()
+               .hasOnly(['members', 'memberNames', 'joinCode'])
+          && request.resource.data.members.toSet().difference(resource.data.members.toSet())
+               .hasOnly([request.auth.uid])
+          && resource.data.members.toSet().difference(request.resource.data.members.toSet()).size() == 0
+          && request.auth.uid in request.resource.data.members
+          && request.resource.data.members.size() <= 10
+          && validJoinCode(hid))
+      );
+
+      // Suppression : l'administrateur, resté seul.
+      allow delete: if signedIn()
+        && resource.data.ownerUid == request.auth.uid
+        && resource.data.members == [request.auth.uid];
+
+      match /items/{itemId} {
+        allow read, delete: if isMember(hid);
+        allow create, update: if isMember(hid)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 200
+          && request.resource.data.size() <= 20;
+      }
+
+      match /shopping/{itemId} {
+        allow read, delete: if isMember(hid);
+        allow create, update: if isMember(hid)
+          && request.resource.data.name is string
+          && request.resource.data.name.size() <= 200
+          && request.resource.data.size() <= 10;
+      }
+    }
+
+    // --------------------------------------------------------------- codes d'invitation
+    match /invites/{code} {
+      // Lecture d'un code précis seulement : impossible de lister les codes existants.
+      allow get: if signedIn();
+      allow list: if false;
+      allow create: if signedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.keys().hasOnly(['hid', 'ownerUid'])
+        && request.resource.data.hid is string;
+      allow update: if false;
+      allow delete: if signedIn() && resource.data.ownerUid == request.auth.uid;
     }
   }
 }

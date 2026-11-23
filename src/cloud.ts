@@ -11,7 +11,10 @@ import {
 import { getServices } from './firebase';
 import { diffById } from './syncLogic';
 
-/** Les données de chaque utilisateur sont dans users/{uid}/items et users/{uid}/shopping. */
+/**
+ * Un « espace » est le chemin où vivent les données : `users/{uid}` (compte seul)
+ * ou `households/{id}` (foyer partagé). Dedans : items et shopping.
+ */
 export type CloudCollection = 'items' | 'shopping';
 
 type Strip<T> = (t: T) => Record<string, unknown>;
@@ -22,8 +25,11 @@ function needDb(): Firestore {
   return services.db;
 }
 
-const colRef = (db: Firestore, uid: string, name: CloudCollection) =>
-  collection(db, 'users', uid, name);
+const colRef = (db: Firestore, space: string, name: CloudCollection) =>
+  collection(db, `${space}/${name}`);
+
+export const personalSpace = (uid: string) => `users/${uid}`;
+export const householdSpace = (id: string) => `households/${id}`;
 
 async function commit(db: Firestore, ops: ((batch: WriteBatch) => void)[]): Promise<void> {
   // Un lot Firestore accepte 500 opérations au maximum.
@@ -35,19 +41,19 @@ async function commit(db: Firestore, ops: ((batch: WriteBatch) => void)[]): Prom
 }
 
 /** Lecture directe sur le serveur (échoue hors connexion, ce qui est voulu pour la fusion initiale). */
-export async function fetchCollection<T>(uid: string, name: CloudCollection): Promise<T[]> {
-  const snap = await getDocsFromServer(colRef(needDb(), uid, name));
+export async function fetchCollection<T>(space: string, name: CloudCollection): Promise<T[]> {
+  const snap = await getDocsFromServer(colRef(needDb(), space, name));
   return snap.docs.map((d) => ({ ...d.data(), id: d.id }) as T);
 }
 
 export async function uploadAll<T extends { id: string }>(
-  uid: string,
+  space: string,
   name: CloudCollection,
   items: T[],
   strip: Strip<T>,
 ): Promise<void> {
   const db = needDb();
-  const col = colRef(db, uid, name);
+  const col = colRef(db, space, name);
   await commit(
     db,
     items.map((item) => (batch: WriteBatch) => batch.set(doc(col, item.id), strip(item))),
@@ -56,7 +62,7 @@ export async function uploadAll<T extends { id: string }>(
 
 /** Envoie uniquement ce qui a changé entre deux versions de la liste. */
 export async function pushDiff<T extends { id: string }>(
-  uid: string,
+  space: string,
   name: CloudCollection,
   prev: T[],
   next: T[],
@@ -65,7 +71,7 @@ export async function pushDiff<T extends { id: string }>(
   const { upserts, deletes } = diffById(prev, next, strip);
   if (upserts.length === 0 && deletes.length === 0) return;
   const db = needDb();
-  const col = colRef(db, uid, name);
+  const col = colRef(db, space, name);
   await commit(db, [
     ...upserts.map((u) => (batch: WriteBatch) => batch.set(doc(col, u.id), u.data)),
     ...deletes.map((id) => (batch: WriteBatch) => batch.delete(doc(col, id))),
@@ -74,27 +80,30 @@ export async function pushDiff<T extends { id: string }>(
 
 /** Écoute en direct une collection. fromCache = true tant que la donnée vient du cache local. */
 export function subscribe<T>(
-  uid: string,
+  space: string,
   name: CloudCollection,
   onData: (list: T[], fromCache: boolean) => void,
   onError: (error: unknown) => void,
 ): () => void {
   return onSnapshot(
-    colRef(needDb(), uid, name),
+    colRef(needDb(), space, name),
     { includeMetadataChanges: true },
     (snap) => onData(snap.docs.map((d) => ({ ...d.data(), id: d.id }) as T), snap.metadata.fromCache),
     onError,
   );
 }
 
-/** Supprime toutes les données d'un utilisateur (suppression de compte). */
-export async function deleteAllUserData(uid: string): Promise<void> {
+/** Supprime tous les produits et la liste de courses d'un espace. */
+export async function deleteSpaceData(space: string): Promise<void> {
   const db = needDb();
   for (const name of ['items', 'shopping'] as CloudCollection[]) {
-    const snap = await getDocs(colRef(db, uid, name));
+    const snap = await getDocs(colRef(db, space, name));
     await commit(
       db,
       snap.docs.map((d) => (batch: WriteBatch) => batch.delete(d.ref)),
     );
   }
 }
+
+/** Supprime toutes les données d'un utilisateur (suppression de compte). */
+export const deleteAllUserData = (uid: string): Promise<void> => deleteSpaceData(personalSpace(uid));

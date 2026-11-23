@@ -1,6 +1,6 @@
 import type { User } from 'firebase/auth';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
 import {
   authErrorMessage,
   canUseGoogle,
@@ -11,6 +11,9 @@ import {
   usesPassword,
 } from '../auth';
 import { Button } from '../components/Button';
+import { APP_NAME } from '../config';
+import { confirmAction } from '../dialog';
+import { Household, MAX_MEMBERS, canLeave, listMembers } from '../householdLogic';
 import { useTheme } from '../theme';
 import { SYNC_LABEL, SyncStatus } from '../types';
 
@@ -19,6 +22,13 @@ interface Props {
   sync: SyncStatus;
   /** Explication affichée quand la synchronisation ne fonctionne pas. */
   syncDetail?: string | null;
+  /** undefined = en cours de chargement, null = aucun foyer. */
+  household?: Household | null;
+  onCreateHousehold: () => Promise<void>;
+  onJoinHousehold: (code: string) => Promise<void>;
+  onLeaveHousehold: (h: Household) => Promise<void>;
+  onRemoveMember: (h: Household, uid: string) => Promise<void>;
+  onRegenerateCode: (h: Household) => Promise<unknown>;
   onBack: () => void;
   onPrivacy: () => void;
   /** Appelé juste avant une tentative de connexion (prépare la fusion des produits de l'appareil). */
@@ -30,12 +40,21 @@ interface Props {
   onDeleteAccount: (password?: string) => Promise<void>;
 }
 
+/** Adresse du site, ajoutée au message d'invitation à un foyer. */
+const APP_URL = 'https://croquvite.vercel.app';
+
 type FormMode = 'login' | 'signup' | 'reset';
 
 export function AccountScreen({
   user,
   sync,
   syncDetail,
+  household,
+  onCreateHousehold,
+  onJoinHousehold,
+  onLeaveHousehold,
+  onRemoveMember,
+  onRegenerateCode,
   onBack,
   onPrivacy,
   onAuthStart,
@@ -53,6 +72,9 @@ export function AccountScreen({
   const [info, setInfo] = useState<string | null>(null);
   const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [deletePassword, setDeletePassword] = useState('');
+  const [joinCode, setJoinCode] = useState('');
+  const [homeBusy, setHomeBusy] = useState(false);
+  const [homeError, setHomeError] = useState<string | null>(null);
 
   const inputStyle = [styles.input, { backgroundColor: theme.card, borderColor: theme.border, color: theme.text }];
 
@@ -105,6 +127,163 @@ export function AccountScreen({
     }
   };
 
+  /** Exécute une action du foyer en gérant l'attente et l'erreur affichée dans la carte « Foyer ». */
+  const runHome = async (action: () => Promise<unknown>) => {
+    setHomeBusy(true);
+    setHomeError(null);
+    try {
+      await action();
+    } catch (e) {
+      const message = authErrorMessage(e);
+      if (message) setHomeError(message);
+    } finally {
+      setHomeBusy(false);
+    }
+  };
+
+  const shareCode = async (code: string) => {
+    const message = `Rejoins mon foyer sur ${APP_NAME} : ouvre ${APP_URL}, crée ton compte, puis Mon compte > Foyer > saisis le code ${code}`;
+    try {
+      await Share.share({ message });
+    } catch {
+      setHomeError(`Partage impossible ici. Donnez ce code à la personne : ${code}`);
+    }
+  };
+
+  const renderHousehold = (me: User) => {
+    const card = (children: React.ReactNode) => (
+      <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, gap: 8 }]}>
+        <Text style={{ color: theme.muted, fontSize: 12, textTransform: 'uppercase', fontWeight: '600' }}>Foyer</Text>
+        {children}
+        {homeError ? <Text style={{ color: theme.danger }}>{homeError}</Text> : null}
+      </View>
+    );
+
+    if (household === undefined) {
+      return card(
+        <Text style={{ color: theme.muted }}>
+          {sync === 'error' ? 'Disponible dès que la synchronisation fonctionne.' : 'Chargement…'}
+        </Text>,
+      );
+    }
+
+    if (household === null) {
+      return card(
+        <>
+          <Text style={{ color: theme.text, fontWeight: '600' }}>Partager avec votre famille</Text>
+          <Text style={{ color: theme.muted }}>
+            Un foyer partage le même frigo et la même liste de courses entre plusieurs personnes, chacune avec son propre
+            compte. Les produits déjà présents sur cet appareil sont ajoutés au foyer.
+          </Text>
+          <Button
+            title={homeBusy ? 'Un instant…' : 'Créer un foyer'}
+            disabled={homeBusy}
+            onPress={() => void runHome(onCreateHousehold)}
+          />
+          <Text style={{ color: theme.muted, textAlign: 'center' }}>ou rejoindre un foyer existant</Text>
+          <TextInput
+            style={inputStyle}
+            value={joinCode}
+            onChangeText={setJoinCode}
+            placeholder="Code d’invitation (ex. K7QM-4XW9)"
+            placeholderTextColor={theme.muted}
+            autoCapitalize="characters"
+            autoCorrect={false}
+          />
+          <Button
+            title={homeBusy ? 'Un instant…' : 'Rejoindre'}
+            variant="secondary"
+            disabled={homeBusy || joinCode.trim().length === 0}
+            onPress={() => void runHome(() => onJoinHousehold(joinCode))}
+          />
+        </>,
+      );
+    }
+
+    const iAmOwner = household.ownerUid === me.uid;
+    const members = listMembers(household, me.uid);
+    return card(
+      <>
+        <Text style={{ color: theme.muted }}>
+          Tous les membres voient et modifient les mêmes produits et la même liste de courses.
+        </Text>
+
+        <Text style={[styles.label, { color: theme.muted }]}>Code d’invitation</Text>
+        <Text selectable style={{ color: theme.text, fontSize: 24, fontWeight: '800', letterSpacing: 2 }}>
+          {household.code}
+        </Text>
+        <Button title="Partager le code" variant="secondary" onPress={() => void shareCode(household.code)} />
+        {iAmOwner && (
+          <Button
+            title="Générer un nouveau code"
+            variant="secondary"
+            disabled={homeBusy}
+            onPress={() =>
+              confirmAction(
+                'Nouveau code ?',
+                'L’ancien code ne fonctionnera plus. Les membres actuels ne sont pas affectés.',
+                'Générer',
+                () => void runHome(() => onRegenerateCode(household)),
+                false,
+              )
+            }
+          />
+        )}
+
+        <Text style={[styles.label, { color: theme.muted }]}>
+          Membres ({members.length}/{MAX_MEMBERS})
+        </Text>
+        {members.map((m) => (
+          <View key={m.uid} style={styles.memberRow}>
+            <Text style={{ color: theme.text, flex: 1 }}>
+              {m.name}
+              {m.me ? ' (vous)' : ''}
+              {m.owner ? ' · administrateur' : ''}
+            </Text>
+            {iAmOwner && !m.me && (
+              <Pressable
+                disabled={homeBusy}
+                hitSlop={8}
+                onPress={() =>
+                  confirmAction(
+                    `Retirer ${m.name} ?`,
+                    'Cette personne n’aura plus accès au foyer. Le code d’invitation sera renouvelé.',
+                    'Retirer',
+                    () => void runHome(() => onRemoveMember(household, m.uid)),
+                  )
+                }
+              >
+                <Text style={{ color: theme.danger, fontWeight: '600' }}>Retirer</Text>
+              </Pressable>
+            )}
+          </View>
+        ))}
+
+        {canLeave(household, me.uid) ? (
+          <Button
+            title={members.length <= 1 ? 'Supprimer le foyer' : 'Quitter le foyer'}
+            variant="danger"
+            disabled={homeBusy}
+            onPress={() =>
+              confirmAction(
+                members.length <= 1 ? 'Supprimer le foyer ?' : 'Quitter le foyer ?',
+                members.length <= 1
+                  ? 'Le foyer et son code seront supprimés. Vos produits restent dans votre compte.'
+                  : 'Vous gardez une copie des produits sur votre compte. Les autres membres conservent le foyer.',
+                members.length <= 1 ? 'Supprimer' : 'Quitter',
+                () => void runHome(() => onLeaveHousehold(household)),
+              )
+            }
+          />
+        ) : (
+          <Text style={{ color: theme.muted, fontSize: 12 }}>
+            Vous êtes l’administrateur : retirez d’abord les autres membres pour pouvoir quitter ou supprimer le foyer.
+          </Text>
+        )}
+      </>,
+    );
+  };
+
   const shell = (children: React.ReactNode) => (
     <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : undefined}>
       <ScrollView
@@ -139,6 +318,8 @@ export function AccountScreen({
           Vos produits et votre liste de courses sont synchronisés sur tous les appareils où vous vous connectez avec ce
           compte. Les rappels d’expiration sont planifiés sur chaque téléphone.
         </Text>
+
+        {renderHousehold(user)}
 
         <Button title="Se déconnecter" variant="secondary" onPress={onSignOut} />
         <Button title="Politique de confidentialité" variant="secondary" onPress={onPrivacy} />
@@ -297,6 +478,7 @@ const styles = StyleSheet.create({
   title: { fontSize: 22, fontWeight: '700' },
   label: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase' },
   input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
   card: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 4 },
   links: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
   danger: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 10, marginTop: 16 },

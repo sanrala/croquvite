@@ -36,6 +36,16 @@ Application (site web, Android, iOS) pour suivre le contenu du frigo et des prod
 - Les **rappels** sont planifiés sur chaque téléphone, y compris pour les produits ajoutés depuis un autre appareil.
 - La connexion Google est disponible sur le **site web** ; dans l'appli mobile, utilisez l'e-mail.
 
+### Foyer (partage en famille)
+
+Dans **Mon compte > Foyer** : « Créer un foyer » donne un code d'invitation (ex. `K7QM-4XW9`). Les autres personnes créent **leur propre compte**, puis saisissent le code. Tous partagent les mêmes produits et la même liste de courses, jusqu'à 10 personnes.
+
+- L'administrateur (celui qui a créé le foyer) peut retirer un membre : le code est alors renouvelé automatiquement. Il peut aussi renouveler le code à la main.
+- Un membre peut quitter à tout moment et garde une copie des produits sur son compte.
+- Les rappels d'expiration restent par téléphone.
+- **Après une mise à jour contenant le foyer, republiez `firestore.rules`** (Firestore > Règles > Publier) : elles contiennent les règles du foyer.
+- Données : `households/{id}` (+ `items`, `shopping`) et `invites/{code}`. Les règles font une lecture supplémentaire du foyer à chaque accès aux produits : prévoyez une consommation de lectures un peu plus élevée dans le plan gratuit.
+
 ### Quotas du plan gratuit
 
 Le stockage n'est pas le problème (quelques centaines d'octets par produit). Le quota qui limite est celui des **lectures** (environ 50 000 par jour d'après la page des tarifs Firebase consultée en novembre 2026) : chaque ouverture de l'appli relit les produits de la personne. Avec une cinquantaine de produits par personne, comptez de l'ordre de **mille ouvertures par jour**, un peu plus sur le web grâce au cache du navigateur. Au-delà, le plan Spark coupe le service au lieu de facturer. Surveillez **Firebase > Utilisation** après le lancement ; les quotas peuvent évoluer, vérifiez-les sur la page des tarifs.
@@ -104,7 +114,7 @@ src/screens/                 Scanner (+ version web), Ajout, Inventaire, Recette
 
 ## Pistes d'évolution
 
-- **Frigo partagé** entre plusieurs personnes (invitation par lien) : même base Firebase, avec un identifiant de « foyer ».
+- Foyer : transfert de l'administration à un autre membre (aujourd'hui l'administrateur doit retirer les autres avant de pouvoir quitter).
 - **Recettes par IA** via une petite fonction côté serveur (la clé API ne doit jamais être dans l'appli).
 - **Notifications sur iPhone depuis le site** : nécessite un serveur d'envoi (Firebase Cloud Functions, plan payant) ; en attendant, rappels sur l'appli mobile.
 - Connexion Google dans l'appli mobile, vérification de l'e-mail à l'inscription.
