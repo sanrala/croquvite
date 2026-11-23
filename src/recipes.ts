@@ -1,4 +1,5 @@
 import { daysUntil } from './dates';
+import { EXTRA_RECIPES } from './recipesExtra';
 import { hasKeyword, normalize } from './text';
 import { FoodItem } from './types';
 
@@ -69,7 +70,7 @@ const K = {
   chouFleur: ['chou fleur'],
 };
 
-export const RECIPES: Recipe[] = [
+const CORE_RECIPES: Recipe[] = [
   {
     id: 'omelette',
     title: 'Omelette garnie',
@@ -417,6 +418,9 @@ export const RECIPES: Recipe[] = [
   },
 ];
 
+/** Toutes les recettes : celles d'ici + celles de recipesExtra.ts */
+export const RECIPES: Recipe[] = [...CORE_RECIPES, ...EXTRA_RECIPES];
+
 function urgencyWeight(days: number): number {
   if (days <= 1) return 3;
   if (days <= 3) return 2;
@@ -428,7 +432,7 @@ function urgencyWeight(days: number): number {
  * Propose des recettes à partir des articles en stock.
  * Les produits périmés sont ignorés ; ceux qui expirent bientôt font remonter les recettes qui les utilisent.
  */
-export function suggestRecipes(allItems: FoodItem[], limit = 12): RecipeSuggestion[] {
+export function suggestRecipes(allItems: FoodItem[], limit = 20): RecipeSuggestion[] {
   const items = allItems
     .filter((i) => daysUntil(i.expiryDate) >= 0)
     .map((item) => ({ item, text: normalize(item.name) }));
