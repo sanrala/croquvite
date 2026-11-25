@@ -7,9 +7,10 @@ import {
   SafeAreaView,
   StatusBar as RNStatusBar,
   StyleSheet,
-  Text,
+  useWindowDimensions,
   View,
 } from 'react-native';
+import { Text } from './src/components/Text';
 import { deleteAccount, logOut, watchAuth } from './src/auth';
 import { fetchCollection, householdSpace, personalSpace, pushDiff, subscribe, uploadAll } from './src/cloud';
 import { Button } from './src/components/Button';
@@ -55,7 +56,7 @@ import {
   stripItem,
   stripShopping,
 } from './src/syncLogic';
-import { useTheme } from './src/theme';
+import { MAX_WIDTH, radius, useTheme } from './src/theme';
 import { FoodItem, Location, ShoppingItem, SYNC_LABEL, SyncStatus } from './src/types';
 
 type Tab = Location | 'recettes' | 'courses';
@@ -69,6 +70,7 @@ type Mode =
 
 export default function App() {
   const theme = useTheme();
+  const { width } = useWindowDimensions();
   const [items, setItems] = useState<FoodItem[]>([]);
   const [shopping, setShopping] = useState<ShoppingItem[]>([]);
   const [loaded, setLoaded] = useState(false);
@@ -473,7 +475,7 @@ export default function App() {
   const screen = (child: React.ReactNode) => (
     <SafeAreaView style={[styles.root, { backgroundColor: theme.bg, paddingTop: topPadding }]}>
       <StatusBar style="auto" />
-      {child}
+      <View style={styles.column}>{child}</View>
     </SafeAreaView>
   );
 
@@ -534,72 +536,91 @@ export default function App() {
 
   const count = (loc: Location) => items.filter((i) => i.location === loc).length;
   const toBuy = shopping.filter((s) => !s.done).length;
-  const tabs: { key: Tab; label: string }[] = [
-    { key: 'frigo', label: `Frigo (${count('frigo')})` },
-    { key: 'placard', label: `Hors frigo (${count('placard')})` },
+  const tabs: { key: Tab; label: string; badge?: number }[] = [
+    { key: 'frigo', label: 'Frigo', badge: count('frigo') },
+    { key: 'placard', label: 'Hors frigo', badge: count('placard') },
     { key: 'recettes', label: 'Recettes' },
-    { key: 'courses', label: toBuy > 0 ? `Courses (${toBuy})` : 'Courses' },
+    { key: 'courses', label: 'Courses', badge: toBuy },
   ];
+  const narrow = width < 400;
+  const syncDot: Record<SyncStatus, string> = {
+    off: theme.muted,
+    syncing: theme.warn,
+    ok: theme.ok,
+    offline: theme.muted,
+    error: theme.danger,
+  };
   const inventoryTab = tab === 'frigo' || tab === 'placard';
 
   return screen(
     <>
       <View style={styles.headerRow}>
-        <Text style={[styles.header, { color: theme.text }]}>Croqu'Vite</Text>
+        <Text display style={[styles.header, { color: theme.text }]}>
+          Croqu'Vite
+        </Text>
         {firebaseConfigured && (
           <Pressable
             onPress={() => setMode({ type: 'account' })}
             accessibilityLabel={user ? 'Mon compte' : 'Se connecter'}
-            style={[styles.account, { borderColor: theme.border, backgroundColor: theme.card }]}
+            style={[styles.account, { backgroundColor: user ? theme.card : theme.primary }]}
           >
-            <Text style={{ color: user ? theme.primary : theme.text, fontWeight: '600', fontSize: 13 }}>
-              {user ? `☁ ${SYNC_LABEL[sync]}` : 'Se connecter'}
+            {user ? <View style={[styles.dot, { backgroundColor: syncDot[sync] }]} /> : null}
+            <Text style={{ color: user ? theme.text : theme.onPrimary, fontWeight: '700', fontSize: 13 }}>
+              {user ? SYNC_LABEL[sync] : 'Se connecter'}
             </Text>
           </Pressable>
         )}
       </View>
 
-      <View style={styles.tabs}>
+      <View style={[styles.tabs, { borderBottomColor: theme.border }]} accessibilityRole="tablist">
         {tabs.map((t) => {
           const active = tab === t.key;
           return (
             <Pressable
               key={t.key}
               onPress={() => setTab(t.key)}
-              style={[
-                styles.tab,
-                { backgroundColor: active ? theme.primary : theme.card, borderColor: active ? theme.primary : theme.border },
-              ]}
+              accessibilityRole="tab"
+              accessibilityState={{ selected: active }}
+              style={[styles.tab, narrow && styles.tabNarrow, { borderBottomColor: active ? theme.primary : 'transparent' }]}
             >
               <Text
-                style={{ color: active ? theme.onPrimary : theme.text, fontWeight: '600', fontSize: 12, textAlign: 'center' }}
-                numberOfLines={2}
+                numberOfLines={1}
+                style={{ color: active ? theme.text : theme.muted, fontWeight: active ? '700' : '500', fontSize: narrow ? 13 : 14 }}
               >
                 {t.label}
               </Text>
+              {t.badge ? (
+                <View style={[styles.badge, narrow && styles.badgeNarrow, { backgroundColor: active ? theme.primary : theme.fill }]}>
+                  <Text style={{ color: active ? theme.onPrimary : theme.muted, fontSize: 11, fontWeight: '800' }}>
+                    {t.badge}
+                  </Text>
+                </View>
+              ) : null}
             </Pressable>
           );
         })}
       </View>
 
       {firebaseConfigured && !user && !bannerHidden && inventoryTab && (
-        <View style={[styles.banner, { backgroundColor: theme.card, borderColor: theme.border }]}>
+        <View style={[styles.banner, { backgroundColor: theme.primarySoft }]}>
           <View style={{ flex: 1, gap: 2 }}>
-            <Text style={{ color: theme.text, fontWeight: '700' }}>Retrouvez vos produits partout</Text>
-            <Text style={{ color: theme.muted, fontSize: 13 }}>
-              Compte gratuit : synchronisez votre frigo entre votre téléphone et votre ordinateur.
+            <Text display style={{ color: theme.text, fontWeight: '700', fontSize: 16 }}>
+              Retrouvez vos produits partout
+            </Text>
+            <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18 }}>
+              Un compte gratuit synchronise votre frigo entre votre téléphone et votre ordinateur.
             </Text>
             <Pressable onPress={() => setMode({ type: 'account' })} hitSlop={8}>
               <Text style={{ color: theme.primary, fontWeight: '700', marginTop: 4 }}>Créer mon compte</Text>
             </Pressable>
           </View>
           <Pressable onPress={hideBanner} accessibilityLabel="Masquer" hitSlop={10}>
-            <Text style={{ color: theme.muted, fontSize: 18 }}>✕</Text>
+            <Text style={{ color: theme.muted, fontSize: 16 }}>✕</Text>
           </Pressable>
         </View>
       )}
 
-      <View style={{ flex: 1 }}>
+      <View style={{ flex: 1, paddingTop: 8 }}>
         {tab === 'recettes' ? (
           <RecipesScreen items={items} onAddToShopping={addToShopping} />
         ) : tab === 'courses' ? (
@@ -619,13 +640,13 @@ export default function App() {
       </View>
 
       {inventoryTab && (
-        <View style={[styles.bottom, { backgroundColor: theme.bg, borderTopColor: theme.border }]}>
-          <Button title="Scanner un produit" onPress={() => setMode({ type: 'scan' })} />
-          <Button title="Ajouter à la main" variant="secondary" onPress={() => setMode({ type: 'add' })} />
-          <Pressable onPress={() => setMode({ type: 'privacy', from: 'list' })} hitSlop={8} style={{ alignSelf: 'center' }}>
-            <Text style={{ color: theme.muted, fontSize: 12, textDecorationLine: 'underline' }}>
-              Politique de confidentialité
-            </Text>
+        <View style={[styles.dockWrap, { backgroundColor: theme.bg }]}>
+          <View style={[styles.dock, { backgroundColor: theme.card, shadowColor: theme.shadow }]}>
+            <Button title="Scanner un produit" onPress={() => setMode({ type: 'scan' })} style={{ flex: 1 }} />
+            <Button title="Saisir" variant="secondary" onPress={() => setMode({ type: 'add' })} />
+          </View>
+          <Pressable onPress={() => setMode({ type: 'privacy', from: 'list' })} hitSlop={8} style={styles.legal}>
+            <Text style={{ color: theme.muted, fontSize: 12 }}>Politique de confidentialité</Text>
           </Pressable>
         </View>
       )}
@@ -635,20 +656,27 @@ export default function App() {
 
 const styles = StyleSheet.create({
   root: { flex: 1 },
-  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingTop: 12 },
-  header: { fontSize: 26, fontWeight: '800' },
-  account: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 12, paddingVertical: 8 },
-  tabs: { flexDirection: 'row', gap: 6, paddingHorizontal: 16, paddingVertical: 12 },
-  tab: { flex: 1, borderWidth: 1, borderRadius: 12, paddingVertical: 10, paddingHorizontal: 4, alignItems: 'center' },
-  banner: {
+  column: { flex: 1, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
+  headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
+  header: { fontSize: 30, fontWeight: '800', letterSpacing: -0.5 },
+  account: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 9 },
+  dot: { width: 8, height: 8, borderRadius: 4 },
+  tabs: { flexDirection: 'row', marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth },
+  tab: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 5, paddingVertical: 13, borderBottomWidth: 3, marginBottom: -StyleSheet.hairlineWidth },
+  tabNarrow: { gap: 3 },
+  badgeNarrow: { minWidth: 18, height: 18, borderRadius: 9, paddingHorizontal: 4 },
+  badge: { minWidth: 20, height: 20, borderRadius: 10, paddingHorizontal: 5, alignItems: 'center', justifyContent: 'center' },
+  banner: { flexDirection: 'row', alignItems: 'flex-start', gap: 12, marginHorizontal: 16, marginTop: 12, padding: 16, borderRadius: radius.sheet },
+  dockWrap: { position: 'absolute', left: 0, right: 0, bottom: 0, paddingHorizontal: 16, paddingTop: 10, paddingBottom: 12, alignItems: 'stretch' },
+  dock: {
     flexDirection: 'row',
-    alignItems: 'flex-start',
-    gap: 12,
-    marginHorizontal: 16,
-    marginBottom: 4,
-    padding: 12,
-    borderWidth: 1,
-    borderRadius: 14,
+    gap: 8,
+    padding: 8,
+    borderRadius: radius.sheet + 4,
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 1,
+    shadowRadius: 24,
+    elevation: 10,
   },
-  bottom: { padding: 16, gap: 10, borderTopWidth: StyleSheet.hairlineWidth },
+  legal: { alignSelf: 'center', paddingTop: 10 },
 });

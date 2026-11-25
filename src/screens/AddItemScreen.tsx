@@ -8,10 +8,10 @@ import {
   Pressable,
   ScrollView,
   StyleSheet,
-  Text,
   TextInput,
   View,
 } from 'react-native';
+import { Text } from '../components/Text';
 import { Button } from '../components/Button';
 import { confirmAction, notify } from '../dialog';
 import { addDays, formatFR, parseISODate, startOfToday, toISODate } from '../dates';
@@ -21,7 +21,7 @@ import { guessKind, ProductKind } from '../productKind';
 import { buildReminderIcs, icsFileName, REMINDER_DAYS } from '../reminderLogic';
 import { guessCategory, suggestExpiryDays } from '../shelfLife';
 import { getKnownProduct } from '../storage';
-import { useTheme } from '../theme';
+import { fonts, MAX_WIDTH, radius, useTheme } from '../theme';
 import { CATEGORY_EMOJI, CATEGORY_LABEL, Category, FoodItem, Location, LOCATION_LABEL } from '../types';
 
 export interface ItemFormData {
@@ -64,12 +64,16 @@ function DateField({ value, onChange, min, max }: { value: Date; onChange: (d: D
         if (e.target.value) onChange(parseISODate(e.target.value));
       },
       style: {
-        padding: 12,
+        minHeight: 52,
+        padding: '0 16px',
         fontSize: 16,
-        borderRadius: 12,
+        borderRadius: radius.control,
         border: `1px solid ${theme.border}`,
         backgroundColor: theme.card,
         color: theme.text,
+        boxSizing: 'border-box',
+        width: '100%',
+        maxWidth: 260,
       },
     });
   }
@@ -245,18 +249,22 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        <Text style={[styles.title, { color: theme.text }]}>{editing ? 'Modifier le produit' : 'Nouveau produit'}</Text>
+        <Text display style={[styles.title, { color: theme.text }]}>
+          {editing ? 'Modifier le produit' : 'Nouveau produit'}
+        </Text>
 
-        <View style={styles.hero}>
+        <View style={[styles.hero, { backgroundColor: theme.card }]}>
           {imageUrl ? (
             <Image source={{ uri: imageUrl }} style={styles.photo} resizeMode="contain" />
           ) : (
-            <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: theme.card, borderColor: theme.border }]}>
+            <View style={[styles.photo, styles.photoPlaceholder, { backgroundColor: theme.fill }]}>
               <Text style={{ fontSize: 40 }}>{CATEGORY_EMOJI[category]}</Text>
             </View>
           )}
           <View style={{ flex: 1, gap: 4 }}>
-            <Text style={{ color: theme.muted }}>{CATEGORY_LABEL[category]}</Text>
+            <Text display style={{ color: theme.text, fontSize: 17, fontWeight: '700' }}>
+              {CATEGORY_LABEL[category]}
+            </Text>
             {code ? <Text style={{ color: theme.muted, fontSize: 12 }}>Code-barres : {code}</Text> : null}
             {lookup === 'loading' && <ActivityIndicator size="small" color={theme.primary} style={{ alignSelf: 'flex-start' }} />}
           </View>
@@ -356,18 +364,18 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, gap: 8, paddingBottom: 48 },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 4 },
-  hero: { flexDirection: 'row', alignItems: 'center', gap: 14 },
-  photo: { width: 96, height: 96, borderRadius: 16 },
-  photoPlaceholder: { alignItems: 'center', justifyContent: 'center', borderWidth: 1 },
-  label: { fontSize: 13, fontWeight: '600', marginTop: 12, textTransform: 'uppercase' },
-  hintLabel: { fontSize: 12 },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
+  content: { padding: 20, gap: 8, paddingBottom: 56, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
+  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.4, marginBottom: 8 },
+  hero: { flexDirection: 'row', alignItems: 'center', gap: 16, padding: 14, borderRadius: radius.sheet },
+  photo: { width: 88, height: 88, borderRadius: radius.thumb + 2 },
+  photoPlaceholder: { alignItems: 'center', justifyContent: 'center' },
+  label: { fontSize: 14, fontWeight: '700', marginTop: 16, marginBottom: 2 },
+  hintLabel: { fontSize: 13, lineHeight: 18 },
+  input: { borderWidth: 1, borderRadius: radius.control, paddingHorizontal: 16, minHeight: 52, fontSize: 16, fontFamily: fonts.body },
   row: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   stepper: { width: 56, paddingHorizontal: 0 },
-  qty: { fontSize: 22, fontWeight: '700', minWidth: 40, textAlign: 'center' },
+  qty: { fontSize: 26, fontWeight: '800', minWidth: 48, textAlign: 'center', fontFamily: fonts.display },
   dateIos: { alignItems: 'flex-start' },
   dateButton: { justifyContent: 'center' },
-  actions: { marginTop: 24, gap: 10 },
+  actions: { marginTop: 28, gap: 10 },
 });

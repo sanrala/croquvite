@@ -1,11 +1,12 @@
 import React from 'react';
-import { Pressable, StyleProp, StyleSheet, Text, ViewStyle } from 'react-native';
-import { useTheme } from '../theme';
+import { Pressable, StyleProp, StyleSheet, ViewStyle } from 'react-native';
+import { fonts, radius, useTheme } from '../theme';
+import { Text } from './Text';
 
 interface Props {
   title: string;
   onPress: () => void;
-  variant?: 'primary' | 'secondary' | 'danger';
+  variant?: 'primary' | 'secondary' | 'danger' | 'ghost';
   disabled?: boolean;
   style?: StyleProp<ViewStyle>;
 }
@@ -13,11 +14,12 @@ interface Props {
 export function Button({ title, onPress, variant = 'primary', disabled, style }: Props) {
   const theme = useTheme();
 
-  const background =
-    variant === 'primary' ? theme.primary : variant === 'danger' ? 'transparent' : theme.card;
-  const color =
-    variant === 'primary' ? theme.onPrimary : variant === 'danger' ? theme.danger : theme.text;
-  const borderColor = variant === 'primary' ? theme.primary : variant === 'danger' ? theme.danger : theme.border;
+  const palette = {
+    primary: { bg: theme.primary, fg: theme.onPrimary, pressed: theme.primary },
+    secondary: { bg: theme.fill, fg: theme.text, pressed: theme.border },
+    danger: { bg: theme.dangerSoft, fg: theme.danger, pressed: theme.dangerSoft },
+    ghost: { bg: 'transparent', fg: theme.primary, pressed: theme.primarySoft },
+  }[variant];
 
   return (
     <Pressable
@@ -26,23 +28,25 @@ export function Button({ title, onPress, variant = 'primary', disabled, style }:
       disabled={disabled}
       style={({ pressed }) => [
         styles.base,
-        { backgroundColor: background, borderColor, opacity: disabled ? 0.5 : pressed ? 0.8 : 1 },
+        {
+          backgroundColor: pressed ? palette.pressed : palette.bg,
+          opacity: disabled ? 0.45 : pressed && variant === 'primary' ? 0.88 : 1,
+        },
         style,
       ]}
     >
-      <Text style={[styles.label, { color }]}>{title}</Text>
+      <Text style={[styles.label, { color: palette.fg, fontFamily: fonts.display }]}>{title}</Text>
     </Pressable>
   );
 }
 
 const styles = StyleSheet.create({
   base: {
-    minHeight: 48,
-    paddingHorizontal: 16,
-    borderRadius: 12,
-    borderWidth: 1,
+    minHeight: 52,
+    paddingHorizontal: 20,
+    borderRadius: radius.control,
     alignItems: 'center',
     justifyContent: 'center',
   },
-  label: { fontSize: 16, fontWeight: '600' },
+  label: { fontSize: 16, fontWeight: '700', letterSpacing: 0.1 },
 });

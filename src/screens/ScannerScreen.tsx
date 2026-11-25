@@ -1,7 +1,12 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
 import React, { useRef, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
+import {
+  StyleSheet,
+  View,
+} from 'react-native';
+import { Text } from '../components/Text';
 import { Button } from '../components/Button';
+import { ScanFrame } from '../components/ScanFrame';
 import { useTheme } from '../theme';
 
 interface Props {
@@ -48,7 +53,7 @@ export function ScannerScreen({ onScanned, onManual, onClose }: Props) {
       />
 
       <View style={styles.overlay} pointerEvents="none">
-        <View style={styles.frame} />
+        <ScanFrame width={280} height={160} />
         <Text style={styles.hint}>Placez le code-barres dans le cadre</Text>
       </View>
 
@@ -71,14 +76,6 @@ const styles = StyleSheet.create({
   message: { fontSize: 16, textAlign: 'center', marginBottom: 8 },
   wide: { alignSelf: 'stretch' },
   overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  frame: {
-    width: 280,
-    height: 160,
-    borderRadius: 16,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
-  },
-  hint: { color: '#FFFFFF', marginTop: 16, fontSize: 15, fontWeight: '500' },
+  hint: { color: '#FFFFFF', marginTop: 20, fontSize: 14, fontWeight: '600', textAlign: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.55)', overflow: 'hidden' },
   actions: { position: 'absolute', left: 16, right: 16, bottom: 32, gap: 10 },
 });

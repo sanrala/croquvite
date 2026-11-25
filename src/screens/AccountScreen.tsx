@@ -1,6 +1,16 @@
 import type { User } from 'firebase/auth';
 import React, { useState } from 'react';
-import { KeyboardAvoidingView, Platform, Pressable, ScrollView, Share, StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  KeyboardAvoidingView,
+  Platform,
+  Pressable,
+  ScrollView,
+  Share,
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
+import { Text } from '../components/Text';
 import {
   authErrorMessage,
   canUseGoogle,
@@ -14,7 +24,7 @@ import { Button } from '../components/Button';
 import { APP_NAME } from '../config';
 import { confirmAction } from '../dialog';
 import { Household, MAX_MEMBERS, canLeave, listMembers } from '../householdLogic';
-import { useTheme } from '../theme';
+import { fonts, MAX_WIDTH, radius, useTheme } from '../theme';
 import { SYNC_LABEL, SyncStatus } from '../types';
 
 interface Props {
@@ -153,7 +163,7 @@ export function AccountScreen({
   const renderHousehold = (me: User) => {
     const card = (children: React.ReactNode) => (
       <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border, gap: 8 }]}>
-        <Text style={{ color: theme.muted, fontSize: 12, textTransform: 'uppercase', fontWeight: '600' }}>Foyer</Text>
+        <Text display style={{ color: theme.text, fontSize: 18, fontWeight: '700' }}>Foyer</Text>
         {children}
         {homeError ? <Text style={{ color: theme.danger }}>{homeError}</Text> : null}
       </View>
@@ -304,7 +314,7 @@ export function AccountScreen({
         <Text style={[styles.title, { color: theme.text }]}>Mon compte</Text>
 
         <View style={[styles.card, { backgroundColor: theme.card, borderColor: theme.border }]}>
-          <Text style={{ color: theme.muted, fontSize: 12, textTransform: 'uppercase', fontWeight: '600' }}>Connecté</Text>
+          <Text style={{ color: theme.muted, fontSize: 13, fontWeight: '600' }}>Connecté</Text>
           <Text style={{ color: theme.text, fontSize: 16, fontWeight: '600' }}>{user.email ?? 'Compte sans e-mail'}</Text>
           <Text style={{ color: sync === 'error' ? theme.danger : sync === 'ok' ? theme.ok : theme.muted }}>
             ☁ {SYNC_LABEL[sync]}
@@ -474,12 +484,12 @@ function Link({ label, onPress, color }: { label: string; onPress: () => void; c
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, gap: 12, paddingBottom: 48 },
-  title: { fontSize: 22, fontWeight: '700' },
-  label: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase' },
-  input: { borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, paddingVertical: 12, fontSize: 16 },
-  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 4 },
-  card: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 4 },
-  links: { flexDirection: 'row', flexWrap: 'wrap', gap: 16 },
-  danger: { borderWidth: 1, borderRadius: 14, padding: 14, gap: 10, marginTop: 16 },
+  content: { padding: 20, gap: 12, paddingBottom: 56, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
+  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.4 },
+  label: { fontSize: 14, fontWeight: '700' },
+  input: { borderWidth: 1, borderRadius: radius.control, paddingHorizontal: 16, minHeight: 52, fontSize: 16, fontFamily: fonts.body },
+  memberRow: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingVertical: 6 },
+  card: { borderRadius: radius.sheet, padding: 18, gap: 6, borderWidth: 0 },
+  links: { flexDirection: 'row', flexWrap: 'wrap', gap: 18 },
+  danger: { borderWidth: 1, borderRadius: radius.sheet, padding: 18, gap: 10, marginTop: 16 },
 });

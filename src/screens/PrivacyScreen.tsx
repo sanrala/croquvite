@@ -1,8 +1,12 @@
 import React from 'react';
-import { ScrollView, StyleSheet, Text } from 'react-native';
+import {
+  ScrollView,
+  StyleSheet,
+} from 'react-native';
+import { Text } from '../components/Text';
 import { Button } from '../components/Button';
 import { APP_NAME, CONTACT_EMAIL, CONTROLLER_NAME } from '../config';
-import { useTheme } from '../theme';
+import { MAX_WIDTH, useTheme } from '../theme';
 
 interface Props {
   onBack: () => void;
@@ -69,12 +73,12 @@ export function PrivacyScreen({ onBack }: Props) {
   const theme = useTheme();
   return (
     <ScrollView style={{ backgroundColor: theme.bg }} contentContainerStyle={styles.content}>
-      <Text style={[styles.title, { color: theme.text }]}>Politique de confidentialité</Text>
+      <Text display style={[styles.title, { color: theme.text }]}>Politique de confidentialité</Text>
       {SECTIONS.map((s) => (
         <React.Fragment key={s.title}>
-          <Text style={[styles.heading, { color: theme.text }]}>{s.title}</Text>
+          <Text display style={[styles.heading, { color: theme.text }]}>{s.title}</Text>
           {s.body.map((p) => (
-            <Text key={p} style={{ color: theme.muted, lineHeight: 21 }}>
+            <Text key={p} style={{ color: theme.muted, lineHeight: 23, fontSize: 15 }}>
               {p}
             </Text>
           ))}
@@ -86,7 +90,7 @@ export function PrivacyScreen({ onBack }: Props) {
 }
 
 const styles = StyleSheet.create({
-  content: { padding: 16, gap: 8, paddingBottom: 48 },
-  title: { fontSize: 22, fontWeight: '700', marginBottom: 4 },
-  heading: { fontSize: 16, fontWeight: '700', marginTop: 12 },
+  content: { padding: 20, gap: 10, paddingBottom: 56, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
+  title: { fontSize: 28, fontWeight: '800', letterSpacing: -0.4, marginBottom: 6 },
+  heading: { fontSize: 18, fontWeight: '700', marginTop: 16 },
 });

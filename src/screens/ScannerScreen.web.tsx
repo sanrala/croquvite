@@ -1,8 +1,14 @@
 import { BrowserMultiFormatReader, IScannerControls } from '@zxing/browser';
 import { BarcodeFormat, DecodeHintType } from '@zxing/library';
 import React, { useEffect, useRef, useState } from 'react';
-import { StyleSheet, Text, TextInput, View } from 'react-native';
+import {
+  StyleSheet,
+  TextInput,
+  View,
+} from 'react-native';
+import { Text } from '../components/Text';
 import { Button } from '../components/Button';
+import { ScanFrame } from '../components/ScanFrame';
 import { useTheme } from '../theme';
 
 /**
@@ -94,7 +100,7 @@ export function ScannerScreen({ onScanned, onManual, onClose }: Props) {
       })}
 
       <View style={styles.overlay} pointerEvents="none">
-        <View style={styles.frame} />
+        <ScanFrame width={320} height={180} />
         <Text style={styles.hint}>Approchez le code-barres (15 à 20 cm), bien éclairé et net</Text>
       </View>
 
@@ -128,16 +134,8 @@ export function ScannerScreen({ onScanned, onManual, onClose }: Props) {
 const styles = StyleSheet.create({
   full: { flex: 1, backgroundColor: '#000' },
   overlay: { ...StyleSheet.absoluteFillObject, alignItems: 'center', justifyContent: 'center' },
-  frame: {
-    width: 320,
-    height: 180,
-    borderRadius: 16,
-    borderWidth: 3,
-    borderColor: '#FFFFFF',
-    backgroundColor: 'transparent',
-  },
-  hint: { color: '#FFFFFF', marginTop: 16, fontSize: 15, fontWeight: '500', textAlign: 'center', paddingHorizontal: 16 },
-  panel: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 16, gap: 10 },
+  hint: { color: '#FFFFFF', marginTop: 20, fontSize: 14, fontWeight: '600', textAlign: 'center', paddingHorizontal: 16, paddingVertical: 8, borderRadius: 999, backgroundColor: 'rgba(0,0,0,0.55)', overflow: 'hidden' },
+  panel: { position: 'absolute', left: 0, right: 0, bottom: 0, padding: 20, gap: 12, borderTopLeftRadius: 28, borderTopRightRadius: 28 },
   row: { flexDirection: 'row', gap: 10, alignItems: 'stretch' },
-  input: { flex: 1, borderWidth: 1, borderRadius: 12, paddingHorizontal: 14, fontSize: 16, minHeight: 48 },
+  input: { flex: 1, borderWidth: 1, borderRadius: 14, paddingHorizontal: 16, fontSize: 16, minHeight: 52 },
 });
