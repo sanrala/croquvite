@@ -64,6 +64,9 @@ export function InventoryScreen({ items, emptyText, onEdit, onUse }: Props) {
                 {expiryLabel(item.expiryDate)}{' '}
                 <Text style={{ color: theme.muted, fontWeight: '400', fontSize: 12 }}>({formatFR(item.expiryDate)})</Text>
               </Text>
+              {item.reminderDate ? (
+                <Text style={{ color: theme.muted, fontSize: 12 }}>🔔 Rappel le {formatFR(item.reminderDate)}</Text>
+              ) : null}
             </View>
             <Pressable
               accessibilityLabel={`Retirer ${item.name}`}

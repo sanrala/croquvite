@@ -356,6 +356,7 @@ export default function App() {
       imageUrl: data.imageUrl,
       category: data.category,
       kind: data.kind,
+      reminderDate: data.reminderDate,
       quantity: data.quantity,
       location: data.location,
       expiryDate: data.expiryDate,

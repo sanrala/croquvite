@@ -53,6 +53,8 @@ export interface FoodItem {
   /** Date d'expiration au format AAAA-MM-JJ (heure locale) */
   expiryDate: string;
   addedAt: string;
+  /** Date de rappel choisie (AAAA-MM-JJ) : remplace les rappels automatiques. */
+  reminderDate?: string;
   /**
    * Ancien champ (versions précédentes) : rappels planifiés sur CET appareil.
    * Il n'est plus synchronisé ; les rappels sont maintenant gérés par appareil (voir notifications.ts).

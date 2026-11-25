@@ -16,7 +16,9 @@ import { Button } from '../components/Button';
 import { confirmAction, notify } from '../dialog';
 import { addDays, formatFR, parseISODate, startOfToday, toISODate } from '../dates';
 import { lookupBarcode } from '../openFoodFacts';
+import { offerCalendarFile } from '../calendarFile';
 import { guessKind, ProductKind } from '../productKind';
+import { buildReminderIcs, icsFileName, REMINDER_DAYS } from '../reminderLogic';
 import { guessCategory, suggestExpiryDays } from '../shelfLife';
 import { getKnownProduct } from '../storage';
 import { useTheme } from '../theme';
@@ -30,6 +32,7 @@ export interface ItemFormData {
   category: Category;
   categoryTags: string[];
   kind?: ProductKind;
+  reminderDate?: string;
   quantity: number;
   location: Location;
   expiryDate: string;
@@ -46,26 +49,68 @@ interface Props {
 
 type LookupState = 'idle' | 'loading' | 'found' | 'notfound';
 
-function addMonths(d: Date, n: number): Date {
-  const r = new Date(d);
-  r.setMonth(r.getMonth() + n);
-  return r;
-}
+/** Sélecteur de date : champ HTML sur le web, sélecteurs natifs sur iOS et Android. */
+function DateField({ value, onChange, min, max }: { value: Date; onChange: (d: Date) => void; min?: Date; max?: Date }) {
+  const theme = useTheme();
+  const [show, setShow] = useState(false);
 
-const PRESETS: Record<Location, { label: string; apply: (d: Date) => Date }[]> = {
-  frigo: [
-    { label: '3 jours', apply: (d) => addDays(d, 3) },
-    { label: '1 semaine', apply: (d) => addDays(d, 7) },
-    { label: '2 semaines', apply: (d) => addDays(d, 14) },
-    { label: '1 mois', apply: (d) => addMonths(d, 1) },
-  ],
-  placard: [
-    { label: '1 semaine', apply: (d) => addDays(d, 7) },
-    { label: '1 mois', apply: (d) => addMonths(d, 1) },
-    { label: '6 mois', apply: (d) => addMonths(d, 6) },
-    { label: '1 an', apply: (d) => addMonths(d, 12) },
-  ],
-};
+  if (Platform.OS === 'web') {
+    return React.createElement('input', {
+      type: 'date',
+      value: toISODate(value),
+      min: min ? toISODate(min) : undefined,
+      max: max ? toISODate(max) : undefined,
+      onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (e.target.value) onChange(parseISODate(e.target.value));
+      },
+      style: {
+        padding: 12,
+        fontSize: 16,
+        borderRadius: 12,
+        border: `1px solid ${theme.border}`,
+        backgroundColor: theme.card,
+        color: theme.text,
+      },
+    });
+  }
+  if (Platform.OS === 'ios') {
+    return (
+      <View style={styles.dateIos}>
+        <DateTimePicker
+          value={value}
+          mode="date"
+          display="compact"
+          locale="fr-FR"
+          minimumDate={min}
+          maximumDate={max}
+          onChange={(_e: DateTimePickerEvent, selected?: Date) => selected && onChange(selected)}
+        />
+      </View>
+    );
+  }
+  return (
+    <>
+      <Pressable
+        onPress={() => setShow(true)}
+        style={[styles.input, styles.dateButton, { backgroundColor: theme.card, borderColor: theme.border }]}
+      >
+        <Text style={{ color: theme.text, fontSize: 16 }}>{formatFR(toISODate(value))}</Text>
+      </Pressable>
+      {show && (
+        <DateTimePicker
+          value={value}
+          mode="date"
+          minimumDate={min}
+          maximumDate={max}
+          onChange={(event: DateTimePickerEvent, selected?: Date) => {
+            setShow(false);
+            if (event.type === 'set' && selected) onChange(selected);
+          }}
+        />
+      )}
+    </>
+  );
+}
 
 export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDelete, onCancel }: Props) {
   const theme = useTheme();
@@ -83,7 +128,9 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
       ? parseISODate(editing.expiryDate)
       : addDays(startOfToday(), suggestExpiryDays('', defaultLocation, 'autre')),
   );
-  const [showPicker, setShowPicker] = useState(false);
+  const [reminder, setReminder] = useState<Date | null>(() =>
+    editing?.reminderDate ? parseISODate(editing.reminderDate) : null,
+  );
   const [lookup, setLookup] = useState<LookupState>('idle');
 
   const category: Category =
@@ -136,9 +183,20 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
     setDateTouched(true);
   };
 
-  const onChangeDate = (event: DateTimePickerEvent, selected?: Date) => {
-    if (Platform.OS === 'android') setShowPicker(false);
-    if (event.type === 'set' && selected) chooseDate(selected);
+  const addToCalendar = () => {
+    const trimmed = name.trim();
+    if (!trimmed) {
+      notify('Nom manquant', 'Indiquez le nom du produit.');
+      return;
+    }
+    const ics = buildReminderIcs({
+      id: editing?.id,
+      name: trimmed,
+      location,
+      expiryDate: toISODate(date),
+      reminderDate: reminder ? toISODate(reminder) : undefined,
+    });
+    offerCalendarFile(icsFileName(trimmed), ics);
   };
 
   const save = () => {
@@ -146,6 +204,17 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
     if (!trimmed) {
       notify('Nom manquant', 'Indiquez le nom du produit.');
       return;
+    }
+    if (reminder) {
+      const changed = toISODate(reminder) !== editing?.reminderDate;
+      if (changed && reminder < startOfToday()) {
+        notify('Rappel déjà passé', 'Choisissez une date de rappel à partir d’aujourd’hui.');
+        return;
+      }
+      if (reminder > date) {
+        notify('Rappel trop tardif', 'Le rappel doit être au plus tard le jour de l’expiration.');
+        return;
+      }
     }
     onSave({
       name: trimmed,
@@ -155,6 +224,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
       category,
       categoryTags: offTags,
       kind: guessKind(trimmed, offTags),
+      reminderDate: reminder ? toISODate(reminder) : undefined,
       quantity,
       location,
       expiryDate: toISODate(date),
@@ -240,54 +310,40 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
         </View>
 
         <Text style={[styles.label, { color: theme.muted }]}>Date d’expiration</Text>
-        {Platform.OS === 'web' ? (
-          React.createElement('input', {
-            type: 'date',
-            value: toISODate(date),
-            onChange: (e: React.ChangeEvent<HTMLInputElement>) => {
-              if (e.target.value) chooseDate(parseISODate(e.target.value));
-            },
-            style: {
-              padding: 12,
-              fontSize: 16,
-              borderRadius: 12,
-              border: `1px solid ${theme.border}`,
-              backgroundColor: theme.card,
-              color: theme.text,
-            },
-          })
-        ) : Platform.OS === 'ios' ? (
-          <View style={styles.dateIos}>
-            <DateTimePicker value={date} mode="date" display="compact" locale="fr-FR" onChange={onChangeDate} />
-          </View>
-        ) : (
-          <>
-            <Pressable
-              onPress={() => setShowPicker(true)}
-              style={[styles.input, styles.dateButton, { backgroundColor: theme.card, borderColor: theme.border }]}
-            >
-              <Text style={{ color: theme.text, fontSize: 16 }}>{formatFR(toISODate(date))}</Text>
-            </Pressable>
-            {showPicker && <DateTimePicker value={date} mode="date" onChange={onChangeDate} />}
-          </>
-        )}
+        <DateField value={date} onChange={chooseDate} />
         {!dateTouched && (
           <Text style={[styles.hintLabel, { color: theme.muted }]}>
             Date suggérée d’après le type de produit — remplacez-la par celle de l’emballage.
           </Text>
         )}
 
-        <View style={styles.presets}>
-          {PRESETS[location].map((p) => (
-            <Pressable
-              key={p.label}
-              onPress={() => chooseDate(p.apply(startOfToday()))}
-              style={[styles.chip, { backgroundColor: theme.card, borderColor: theme.border }]}
-            >
-              <Text style={{ color: theme.text }}>{p.label}</Text>
-            </Pressable>
-          ))}
-        </View>
+        <Text style={[styles.label, { color: theme.muted }]}>Rappel</Text>
+        {reminder ? (
+          <>
+            <DateField value={reminder} onChange={setReminder} min={startOfToday()} max={date} />
+            <Text style={[styles.hintLabel, { color: theme.muted }]}>Vous serez prévenu ce jour-là à 9 h.</Text>
+            <Button title="Revenir aux rappels automatiques" variant="secondary" onPress={() => setReminder(null)} />
+          </>
+        ) : (
+          <>
+            <Text style={[styles.hintLabel, { color: theme.muted }]}>
+              Rappels automatiques à 9 h : {REMINDER_DAYS[location].map((d) => (d === 1 ? 'la veille' : `${d} jours avant`)).join(' et ')}.
+            </Text>
+            <Button
+              title="Choisir une date de rappel"
+              variant="secondary"
+              onPress={() => setReminder(date > startOfToday() ? addDays(date, -1) : startOfToday())}
+            />
+          </>
+        )}
+        {Platform.OS === 'web' && (
+          <>
+            <Button title="Ajouter à mon calendrier (iPhone, ordinateur)" variant="secondary" onPress={addToCalendar} />
+            <Text style={[styles.hintLabel, { color: theme.muted }]}>
+              Sur iPhone, un site ne peut pas envoyer de notification : le calendrier le fait à votre place, avec une alerte.
+            </Text>
+          </>
+        )}
 
         <View style={styles.actions}>
           <Button title="Enregistrer" onPress={save} />
@@ -313,7 +369,5 @@ const styles = StyleSheet.create({
   qty: { fontSize: 22, fontWeight: '700', minWidth: 40, textAlign: 'center' },
   dateIos: { alignItems: 'flex-start' },
   dateButton: { justifyContent: 'center' },
-  presets: { flexDirection: 'row', flexWrap: 'wrap', gap: 8, marginTop: 4 },
-  chip: { borderWidth: 1, borderRadius: 20, paddingHorizontal: 14, paddingVertical: 8 },
   actions: { marginTop: 24, gap: 10 },
 });

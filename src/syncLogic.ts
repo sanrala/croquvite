@@ -85,7 +85,8 @@ export function sameJSON(a: unknown, b: unknown): boolean {
 export type NotifMap = Record<string, { sig: string; ids: string[] }>;
 
 export function notifSignature(item: FoodItem): string {
-  return `${item.expiryDate}|${item.location}|${item.name}`;
+  // La date de rappel n'est ajoutée que si elle existe : les signatures déjà enregistrées restent valables.
+  return `${item.expiryDate}|${item.location}|${item.name}${item.reminderDate ? `|r:${item.reminderDate}` : ''}`;
 }
 
 export interface NotifPlan {

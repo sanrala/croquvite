@@ -1,18 +1,12 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import * as Notifications from 'expo-notifications';
 import { Platform } from 'react-native';
-import { addDays, parseISODate } from './dates';
-import { NotifMap, planNotifications } from './syncLogic';
-import { FoodItem, Location } from './types';
+import { planReminders } from './reminderLogic';
+import { NotifMap, notifSignature, planNotifications } from './syncLogic';
+import { FoodItem } from './types';
 
 const CHANNEL_ID = 'expiry';
 const MAP_KEY = 'frigo:notif-map:v1';
-
-/** Combien de jours avant l'expiration on prévient (1 = la veille, à 9 h). */
-const REMINDER_DAYS: Record<Location, number[]> = {
-  frigo: [3, 1],
-  placard: [7, 1],
-};
 
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
@@ -36,30 +30,21 @@ export async function ensureNotificationPermission(): Promise<boolean> {
   return asked.granted;
 }
 
-/** Planifie les rappels d'un article et retourne leurs identifiants. */
+/** Planifie les rappels d'un article (automatiques, ou à la date choisie) et retourne leurs identifiants. */
 export async function scheduleExpiryNotifications(item: FoodItem): Promise<string[]> {
   const ids: string[] = [];
-  const expiry = parseISODate(item.expiryDate);
   const now = Date.now();
 
-  for (const before of REMINDER_DAYS[item.location]) {
-    const when = addDays(expiry, -before);
-    when.setHours(9, 0, 0, 0);
-    if (when.getTime() <= now) continue;
-
-    const body =
-      before === 0
-        ? `${item.name} expire aujourd'hui.`
-        : `${item.name} expire dans ${before} jour${before > 1 ? 's' : ''}.`;
-
+  for (const reminder of planReminders(item)) {
+    if (reminder.when.getTime() <= now) continue;
     const id = await Notifications.scheduleNotificationAsync({
       content: {
         title: 'À consommer bientôt',
-        body,
+        body: reminder.body,
       },
       trigger: {
         type: Notifications.SchedulableTriggerInputTypes.DATE,
-        date: when,
+        date: reminder.when,
         channelId: CHANNEL_ID,
       },
     });
@@ -101,7 +86,7 @@ async function reconcile(items: FoodItem[]): Promise<void> {
   for (const item of plan.schedule) {
     try {
       const ids = await scheduleExpiryNotifications(item);
-      map[item.id] = { sig: `${item.expiryDate}|${item.location}|${item.name}`, ids };
+      map[item.id] = { sig: notifSignature(item), ids };
     } catch {
       // Permission refusée ou notifications indisponibles : on réessaiera à la prochaine modification.
     }
