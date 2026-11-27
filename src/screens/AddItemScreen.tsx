@@ -422,3 +422,4 @@ const styles = StyleSheet.create({
   infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginTop: 8, borderRadius: radius.sheet, borderWidth: 1 },
   infoIcon: { fontSize: 26 },
 });
+// yyyy
