@@ -7,7 +7,7 @@ import type { Category, FoodItem } from './types';
  * On détecte donc son TYPE au moment de l'ajout (nom + catégories Open Food Facts), et les recettes
  * ne l'utilisent que pour les ingrédients de ce type (un yaourt pour « Yaourt nature », par exemple).
  */
-export type ProductKind = 'yaourt' | 'dessert' | 'compote' | 'boisson' | 'glace' | 'biscuit' | 'plat' | 'tartinable';
+export type ProductKind = 'sauce' | 'yaourt' | 'dessert' | 'compote' | 'boisson' | 'glace' | 'biscuit' | 'plat' | 'tartinable';
 
 interface KindRule {
   kind: ProductKind;
@@ -48,9 +48,31 @@ const RULES: KindRule[] = [
   },
   {
     kind: 'plat',
-    names: ['plat cuisine', 'lasagne', 'pizza', 'quiche', 'soupe', 'sandwich', 'burger', 'nuggets', 'cordon bleu', 'tarte'],
-    tags: ['en:meals', 'en:pizzas', 'en:quiches', 'en:soups', 'en:sandwiches'],
+    names: [
+      'plat cuisine', 'lasagne', 'pizza', 'quiche', 'soupe', 'sandwich', 'burger', 'nuggets', 'cordon bleu', 'tarte',
+      // Produits instantanés ou déshydratés : « sauce poulet » n'est pas du poulet.
+      'instantane', 'instantanee', 'instantanees', 'instantanes', 'nouilles instantanees', 'ramen', 'noodles', 'maggi', 'knorr', 'pot noodle', 'cup noodles', 'veloute',
+    ],
+    tags: ['en:meals', 'en:pizzas', 'en:quiches', 'en:soups', 'en:sandwiches', 'en:instant-noodles', 'en:instant-foods', 'en:dehydrated-soups', 'en:noodle-soups'],
     satisfies: ['plat'],
+  },
+  {
+    // Sauces et condiments : une sauce tomate n'est ni une tomate ni un légume frais.
+    kind: 'sauce',
+    names: ['sauce', 'coulis', 'passata', 'ketchup', 'mayonnaise', 'moutarde', 'pesto', 'concentre de tomate', 'vinaigrette', 'bolognaise', 'carbonara'],
+    tags: ['en:sauces', 'en:tomato-sauces', 'en:condiments', 'en:dressings', 'en:pasta-sauces'],
+    satisfies: ['coulis', 'passata', 'pesto', 'sauce', 'moutarde', 'mayonnaise', 'ketchup', 'vinaigrette'],
+  },
+  {
+    // Sauces, coulis et tomates en conserve : une sauce tomate n'est pas un légume frais.
+    // Elles ne servent que pour les recettes qui demandent un coulis, une sauce ou un pesto.
+    kind: 'sauce',
+    names: [
+      'sauce', 'coulis', 'passata', 'concentre de tomate', 'double concentre', 'ketchup', 'mayonnaise',
+      'vinaigrette', 'pesto', 'tomates pelees', 'tomates concassees', 'tomate concassee', 'pulpe de tomate',
+    ],
+    tags: ['en:sauces', 'en:tomato-sauces', 'en:condiments'],
+    satisfies: ['coulis', 'passata', 'pesto', 'sauce'],
   },
   {
     kind: 'tartinable',
@@ -95,6 +117,8 @@ export function categoryForKind(kind: ProductKind): Category {
       return 'boisson';
     case 'plat':
       return 'plat';
+    case 'sauce':
+      return 'epicerie';
     default:
       return 'epicerie';
   }
