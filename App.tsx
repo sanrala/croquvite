@@ -32,6 +32,7 @@ import { makeId } from './src/id';
 import { ensureNotificationPermission, syncNotifications } from './src/notifications';
 import { AccountScreen } from './src/screens/AccountScreen';
 import { AddItemScreen, ItemFormData } from './src/screens/AddItemScreen';
+import { InfoScreen, InfoTab } from './src/screens/InfoScreen';
 import { InventoryScreen } from './src/screens/InventoryScreen';
 import { PrivacyScreen } from './src/screens/PrivacyScreen';
 import { RecipesScreen } from './src/screens/RecipesScreen';
@@ -76,6 +77,8 @@ export default function App() {
   const [loaded, setLoaded] = useState(false);
   const [tab, setTab] = useState<Tab>('frigo');
   const [mode, setMode] = useState<Mode>({ type: 'list' });
+  /** Page « Bon à savoir » affichée par-dessus l'écran courant (le formulaire en cours reste intact). */
+  const [infoTab, setInfoTab] = useState<InfoTab | null>(null);
   const [user, setUser] = useState<User | null>(null);
   const [sync, setSync] = useState<SyncStatus>('off');
   const [syncDetail, setSyncDetail] = useState<string | null>(null);
@@ -358,6 +361,7 @@ export default function App() {
       imageUrl: data.imageUrl,
       category: data.category,
       kind: data.kind,
+      nutriscore: data.nutriscore,
       reminderDate: data.reminderDate,
       quantity: data.quantity,
       location: data.location,
@@ -494,15 +498,23 @@ export default function App() {
 
   if (mode.type === 'add') {
     const editing = mode.editing;
+    // Le formulaire est seulement masqué (pas démonté) pendant la lecture de « Bon à savoir » :
+    // rien de ce qui a été saisi n'est perdu.
     return screen(
-      <AddItemScreen
-        barcode={mode.barcode}
-        editing={editing}
-        defaultLocation={tab === 'placard' ? 'placard' : 'frigo'}
-        onSave={(data) => void handleSave(data)}
-        onDelete={editing ? () => void handleDelete(editing) : undefined}
-        onCancel={() => setMode({ type: 'list' })}
-      />,
+      <>
+        <View style={{ flex: 1, display: infoTab ? 'none' : 'flex' }}>
+          <AddItemScreen
+            barcode={mode.barcode}
+            editing={editing}
+            defaultLocation={tab === 'placard' ? 'placard' : 'frigo'}
+            onSave={(data) => void handleSave(data)}
+            onDelete={editing ? () => void handleDelete(editing) : undefined}
+            onCancel={() => setMode({ type: 'list' })}
+            onOpenInfo={(t) => setInfoTab(t ?? 'dates')}
+          />
+        </View>
+        {infoTab && <InfoScreen initialTab={infoTab} onClose={() => setInfoTab(null)} />}
+      </>,
     );
   }
 
@@ -534,6 +546,10 @@ export default function App() {
     return screen(<PrivacyScreen onBack={() => setMode(from === 'account' ? { type: 'account' } : { type: 'list' })} />);
   }
 
+  if (infoTab) {
+    return screen(<InfoScreen initialTab={infoTab} onClose={() => setInfoTab(null)} />);
+  }
+
   const count = (loc: Location) => items.filter((i) => i.location === loc).length;
   const toBuy = shopping.filter((s) => !s.done).length;
   const tabs: { key: Tab; label: string; badge?: number }[] = [
@@ -558,6 +574,22 @@ export default function App() {
         <Text display style={[styles.header, { color: theme.text }]}>
           Croqu'Vite
         </Text>
+        <View style={styles.headerActions}>
+        <Pressable
+          onPress={() => setInfoTab('dates')}
+          accessibilityRole="button"
+          accessibilityLabel="Bon à savoir : dates et Nutri-Score"
+          hitSlop={8}
+          style={({ pressed }) => [
+            styles.infoBtn,
+            { backgroundColor: theme.card, borderColor: theme.border, opacity: pressed ? 0.7 : 1 },
+          ]}
+        >
+          <View style={[styles.infoGlyph, { backgroundColor: theme.primary }]}>
+            <Text style={[styles.infoGlyphText, { color: theme.onPrimary }]}>i</Text>
+          </View>
+          {!narrow && <Text style={{ color: theme.text, fontWeight: '700', fontSize: 13 }}>Guide</Text>}
+        </Pressable>
         {firebaseConfigured && (
           <Pressable
             onPress={() => setMode({ type: 'account' })}
@@ -570,6 +602,7 @@ export default function App() {
             </Text>
           </Pressable>
         )}
+        </View>
       </View>
 
       <View style={[styles.tabs, { borderBottomColor: theme.border }]} accessibilityRole="tablist">
@@ -645,9 +678,15 @@ export default function App() {
             <Button title="Scanner un produit" onPress={() => setMode({ type: 'scan' })} style={{ flex: 1 }} />
             <Button title="Saisir" variant="secondary" onPress={() => setMode({ type: 'add' })} />
           </View>
-          <Pressable onPress={() => setMode({ type: 'privacy', from: 'list' })} hitSlop={8} style={styles.legal}>
-            <Text style={{ color: theme.muted, fontSize: 12 }}>Politique de confidentialité</Text>
-          </Pressable>
+          <View style={styles.legal}>
+            <Pressable onPress={() => setInfoTab('dates')} hitSlop={8}>
+              <Text style={{ color: theme.muted, fontSize: 12 }}>ⓘ Bon à savoir</Text>
+            </Pressable>
+            <Text style={{ color: theme.muted, fontSize: 12 }}>·</Text>
+            <Pressable onPress={() => setMode({ type: 'privacy', from: 'list' })} hitSlop={8}>
+              <Text style={{ color: theme.muted, fontSize: 12 }}>Politique de confidentialité</Text>
+            </Pressable>
+          </View>
         </View>
       )}
     </>,
@@ -659,6 +698,10 @@ const styles = StyleSheet.create({
   column: { flex: 1, width: '100%', maxWidth: MAX_WIDTH, alignSelf: 'center' },
   headerRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 20, paddingTop: 14, paddingBottom: 6 },
   header: { fontSize: 30, fontWeight: '800', letterSpacing: -0.5 },
+  headerActions: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  infoBtn: { flexDirection: 'row', alignItems: 'center', gap: 7, borderRadius: radius.pill, borderWidth: StyleSheet.hairlineWidth, paddingLeft: 6, paddingRight: 12, paddingVertical: 6, minHeight: 36 },
+  infoGlyph: { width: 22, height: 22, borderRadius: 11, alignItems: 'center', justifyContent: 'center' },
+  infoGlyphText: { fontSize: 13, fontWeight: '900', fontStyle: 'italic', fontFamily: Platform.select({ ios: 'Georgia', android: 'serif', default: 'Georgia, serif' }) },
   account: { flexDirection: 'row', alignItems: 'center', gap: 8, borderRadius: radius.pill, paddingHorizontal: 14, paddingVertical: 9 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   tabs: { flexDirection: 'row', marginHorizontal: 16, borderBottomWidth: StyleSheet.hairlineWidth },
@@ -678,5 +721,5 @@ const styles = StyleSheet.create({
     shadowRadius: 24,
     elevation: 10,
   },
-  legal: { alignSelf: 'center', paddingTop: 10 },
+  legal: { flexDirection: 'row', alignItems: 'center', gap: 10, alignSelf: 'center', paddingTop: 10 },
 });

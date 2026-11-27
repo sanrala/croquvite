@@ -1,3 +1,4 @@
+import type { NutriScore } from './openFoodFacts';
 import type { ProductKind } from './productKind';
 
 export type Location = 'frigo' | 'placard';
@@ -48,6 +49,8 @@ export interface FoodItem {
   category?: Category;
   /** Type de produit fini (yaourt, compote, jus…), absent pour un produit brut. Voir productKind.ts. */
   kind?: ProductKind;
+  /** Nutri-Score Open Food Facts (A à E), absent si non noté. */
+  nutriscore?: NutriScore;
   quantity: number;
   location: Location;
   /** Date d'expiration au format AAAA-MM-JJ (heure locale) */

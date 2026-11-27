@@ -13,9 +13,11 @@ import {
 } from 'react-native';
 import { Text } from '../components/Text';
 import { Button } from '../components/Button';
+import { NutriScoreBadge } from '../components/NutriScoreBadge';
+import type { InfoTab } from './InfoScreen';
 import { confirmAction, notify } from '../dialog';
 import { addDays, formatFR, parseISODate, startOfToday, toISODate } from '../dates';
-import { lookupBarcode } from '../openFoodFacts';
+import { lookupBarcode, NutriScore } from '../openFoodFacts';
 import { offerCalendarFile } from '../calendarFile';
 import { guessKind, ProductKind } from '../productKind';
 import { buildReminderIcs, icsFileName, REMINDER_DAYS } from '../reminderLogic';
@@ -32,6 +34,8 @@ export interface ItemFormData {
   category: Category;
   categoryTags: string[];
   kind?: ProductKind;
+  /** Nutri-Score Open Food Facts (A à E), absent si non noté. */
+  nutriscore?: NutriScore;
   reminderDate?: string;
   quantity: number;
   location: Location;
@@ -45,6 +49,8 @@ interface Props {
   onSave: (data: ItemFormData) => void;
   onDelete?: () => void;
   onCancel: () => void;
+  /** Ouvre la page « Bon à savoir » (dates et Nutri-Score). */
+  onOpenInfo?: (tab?: InfoTab) => void;
 }
 
 type LookupState = 'idle' | 'loading' | 'found' | 'notfound';
@@ -116,7 +122,7 @@ function DateField({ value, onChange, min, max }: { value: Date; onChange: (d: D
   );
 }
 
-export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDelete, onCancel }: Props) {
+export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDelete, onCancel, onOpenInfo }: Props) {
   const theme = useTheme();
   const code = editing?.barcode ?? barcode;
 
@@ -124,6 +130,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
   const [brand, setBrand] = useState(editing?.brand ?? '');
   const [imageUrl, setImageUrl] = useState<string | undefined>(editing?.imageUrl);
   const [offTags, setOffTags] = useState<string[]>([]);
+  const [nutriscore, setNutriscore] = useState<NutriScore | undefined>(editing?.nutriscore);
   const [quantity, setQuantity] = useState(editing?.quantity ?? 1);
   const [location, setLocation] = useState<Location>(editing?.location ?? defaultLocation);
   const [dateTouched, setDateTouched] = useState(Boolean(editing));
@@ -162,6 +169,12 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
         setImageUrl(known.imageUrl);
         setOffTags(known.categoryTags ?? []);
         setLookup('found');
+        // Produit déjà mémorisé : on récupère son Nutri-Score (et des catégories à jour) en arrière-plan.
+        lookupBarcode(barcode).then((info) => {
+          if (cancelled || !info) return;
+          if (info.nutriscore) setNutriscore(info.nutriscore);
+          if (info.categoryTags.length > 0) setOffTags(info.categoryTags);
+        });
         return;
       }
       const info = await lookupBarcode(barcode);
@@ -171,6 +184,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
         setBrand(info.brand ?? '');
         setImageUrl(info.imageUrl);
         setOffTags(info.categoryTags);
+        setNutriscore(info.nutriscore);
         setLookup('found');
       } else {
         setLookup('notfound');
@@ -228,6 +242,7 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
       category,
       categoryTags: offTags,
       kind: guessKind(trimmed, offTags),
+      nutriscore,
       reminderDate: reminder ? toISODate(reminder) : undefined,
       quantity,
       location,
@@ -266,6 +281,11 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
               {CATEGORY_LABEL[category]}
             </Text>
             {code ? <Text style={{ color: theme.muted, fontSize: 12 }}>Code-barres : {code}</Text> : null}
+            {nutriscore ? (
+              <Pressable onPress={() => onOpenInfo?.('nutriscore')} disabled={!onOpenInfo} accessibilityRole="button" accessibilityHint="Ouvre l'explication du Nutri-Score">
+                <NutriScoreBadge grade={nutriscore} />
+              </Pressable>
+            ) : null}
             {lookup === 'loading' && <ActivityIndicator size="small" color={theme.primary} style={{ alignSelf: 'flex-start' }} />}
           </View>
         </View>
@@ -324,6 +344,27 @@ export function AddItemScreen({ barcode, editing, defaultLocation, onSave, onDel
             Date suggérée d’après le type de produit — remplacez-la par celle de l’emballage.
           </Text>
         )}
+        {onOpenInfo ? (
+          <Pressable
+            onPress={() => onOpenInfo('dates')}
+            accessibilityRole="button"
+            style={({ pressed }) => [
+              styles.infoCard,
+              { backgroundColor: theme.primarySoft, borderColor: theme.primary, opacity: pressed ? 0.8 : 1 },
+            ]}
+          >
+            <Text style={styles.infoIcon}>💡</Text>
+            <View style={{ flex: 1, gap: 2 }}>
+              <Text style={{ color: theme.text, fontSize: 15, fontWeight: '800' }}>
+                « Jusqu’au » ou « de préférence » ?
+              </Text>
+              <Text style={{ color: theme.muted, fontSize: 13, lineHeight: 18 }}>
+                L’un est un risque pour la santé, l’autre non. Touchez pour savoir lequel.
+              </Text>
+            </View>
+            <Text style={{ color: theme.primary, fontSize: 22, fontWeight: '800' }}>›</Text>
+          </Pressable>
+        ) : null}
 
         <Text style={[styles.label, { color: theme.muted }]}>Rappel</Text>
         {reminder ? (
@@ -378,4 +419,6 @@ const styles = StyleSheet.create({
   dateIos: { alignItems: 'flex-start' },
   dateButton: { justifyContent: 'center' },
   actions: { marginTop: 28, gap: 10 },
+  infoCard: { flexDirection: 'row', alignItems: 'center', gap: 12, padding: 14, marginTop: 8, borderRadius: radius.sheet, borderWidth: 1 },
+  infoIcon: { fontSize: 26 },
 });
